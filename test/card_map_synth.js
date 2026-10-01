@@ -122,4 +122,19 @@ ok('가산점 분류: 시도특색 비고별, 연구학교 공통/선택, 학교
   assert.strictEqual(c('알수없음', '그냥'), null);
 });
 
+ok('같은 항목·같은 기간 중복은 한 번만, 날짜 없는 가산점 행은 알린다', () => {
+  const r = CardMap.toState(parsed([
+    tbl('bonus', '인사카드', [
+      row({ area: '보직교사', period: ['2024.03.01 ~', '2025.02.28'], note: '부장' }),
+      row({ area: '농어촌', period: '', note: '날짜 없음' }),
+    ]),
+    tbl('career', '인사카드', [
+      row({ period: ['2024.03.01 ~', '2025.02.28'], type: '보직교사', dept: 'Q청 가학교' }),
+      row({ period: ['2020.03.01 ~'], type: '전보', dept: 'Q청 가학교' }),
+    ]),
+  ]), { E, kind: 'g1', baseDate: '2027-02-28' });
+  assert.strictEqual(r.patch.bonus.periods.filter(p => p.cat === 'head').length, 1);
+  assert.ok(r.warn.some(w => w.includes('가산점 1행은 기간(날짜)을 읽지 못해')));
+});
+
 console.log(n + '개 확인 통과' + (process.exitCode ? ' (실패 있음)' : ''));

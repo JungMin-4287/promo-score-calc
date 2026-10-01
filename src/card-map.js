@@ -163,15 +163,17 @@
     /* 가산점 */
     const bp = pick(parsed, 'bonus'); mismatch('가산점', bp);
     const periods = [], unclassified = [], counts = {};
+    let noDate = 0;
     for (const r of bp.rows) {
       const ds = dateList(T(r, 'period')), area = tidy(T(r, 'area')), note = tidy(T(r, 'note'));
-      if (!ds.length) continue;
+      if (!ds.length) { noDate++; continue; }
       const cat = classifyBonus(area, note);
       if (cat === 'violence') { const k = pKey(ds[0]); if (patch.bonus.violence.indexOf(k) < 0) patch.bonus.violence.push(k); counts.violence = (counts.violence || 0) + 1; continue; }
       if (!cat || (E && !E.CATS[cat])) { unclassified.push({ area, note, start: ds[0], end: ds[1] || '' }); continue; }
       periods.push({ cat, start: ds[0], end: ds[1] || '', label: note || area });
       counts[cat] = (counts[cat] || 0) + 1;
     }
+    if (noDate) warn.push('가산점 ' + noDate + '행은 기간(날짜)을 읽지 못해 넣지 않았습니다. 해당하면 가산점 탭에서 직접 추가하세요.');
     if (unclassified.length) warn.push('가산점 ' + unclassified.length + '행은 어떤 항목인지 알 수 없어 넣지 않았습니다: ' + unclassified.map(u => (u.area + (u.note ? '·' + u.note : '')) + ' ' + dsh(u.start) + '~' + dsh(u.end)).join(' / ') + '. 해당하면 가산점 탭에서 직접 추가하세요.');
 
     /* 경력(임용발령사항) */
@@ -217,6 +219,12 @@
     if (patch.career.some(c => c.mil)) info.push(['군복무', patch.career.filter(c => c.mil).map(c => dsh(c.start) + '~' + dsh(c.end)).join(', ')]);
     if (others.length) warn.push('임용 전 경력 중 군복무 외 ' + others.length + '건(' + others.join(' / ') + ')은 평정 인정 여부를 확인해야 해서 넣지 않았습니다. 인정되면 경력 탭에서 추가하세요.');
 
+    // 같은 항목이 같은 기간으로 두 번 나오면(가산점 표와 임용발령 양쪽 등) 한 번만
+    const seenP = new Set();
+    const uniq = periods.filter(p => { const k = p.cat + '|' + p.start + '|' + p.end; if (seenP.has(k)) return false; seenP.add(k); return true; });
+    periods.length = 0; Array.prototype.push.apply(periods, uniq);
+    Object.keys(counts).forEach(k => { if (k !== 'violence') delete counts[k]; });
+    periods.forEach(p => { counts[p.cat] = (counts[p.cat] || 0) + 1; });
     const order = E ? Object.keys(E.CATS) : [];
     periods.sort((a, b) => (order.indexOf(a.cat) - order.indexOf(b.cat)) || (a.start < b.start ? -1 : a.start > b.start ? 1 : 0));
     patch.bonus.periods = periods;
