@@ -399,6 +399,20 @@ table.proj thead th .xs { font-weight: 400; }
 .yr-tools .inl .lb { white-space: nowrap; }
 .yr-tools .inl input { width: 78px; }
 
+/* 오른쪽 점수 아래 '예상 점수' 카드 */
+.fcard { border-color: var(--accent); background: color-mix(in srgb, var(--accent-soft) 40%, var(--surface)); padding: 14px 18px; }
+.fc-h { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; font-size: 14px; }
+.fc-h b { font-weight: 600; }
+.fc-h .step-link { font-size: 12.5px; }
+.fc-row { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 10px; margin-top: 4px; }
+.fc-val { font-size: 38px; font-weight: 600; line-height: 1.05; letter-spacing: -.02em; color: var(--accent); }
+.fc-of { font-size: 14px; color: var(--ink-3); }
+.fc-d { margin-left: auto; font-size: 15px; font-weight: 700; color: var(--ink-3); font-variant-numeric: tabular-nums; }
+.fc-d.up { color: var(--accent); }
+.fc-sub { font-size: 12.5px; color: var(--ink-2); margin-top: 6px; line-height: 1.5; }
+.minibar .mb-fc { font-size: 12px; color: var(--accent); line-height: 1.2; margin-top: 1px; font-variant-numeric: tabular-nums; }
+.minibar .mb-fc b { font-weight: 700; }
+
 </style>
 </head>
 <body>
@@ -2636,8 +2650,9 @@ function paintTables() {
 }
 
 /* ───────── 전망: 예상 요약 · 표 + 선 그래프 ───────── */
-function planSummaryHtml() {
-  if (!R || !F) return '';
+/** 예상 점수 요약에 쓰는 값 — 전망 탭 요약과 오른쪽 점수 아래 카드가 같이 쓴다 */
+function forecastData() {
+  if (!R || !F) return null;
   const has = planCount() > 0;
   const same = R.total === null || F.total === null;           // 한쪽이라도 근평이 없으면 같은 기준(근평 제외)으로 견준다
   const b = same ? R.sumWithoutPerf : R.total, f = same ? F.sumWithoutPerf : F.total, d = f - b;
@@ -2645,20 +2660,35 @@ function planSummaryHtml() {
     ...(isTeacher() ? [['연구실적', R.training.researchPoints, F.training.researchPoints]] : []), ['가산점 공통', R.bonus.common, F.bonus.common], ['가산점 선택', R.bonus.select, F.bonus.select]];
   if (!same) cats.splice(1, 0, ['근무성적', R.perf.value, F.perf.value]);
   const ups = cats.filter(([, x, y]) => x !== null && y !== null && Math.abs(y - x) > 0.0005).map(([n, x, y]) => `${n} ${y - x > 0 ? '+' : ''}${fx(y - x, 3)}`);
-  let sub = `${same ? '근평 제외 합계' : '총점'} 기준`;
-  if (!has) sub += ' · 아직 입력한 예상이 없어 카드 기준과 같습니다';
-  else if (ups.length) sub += ` · 늘어난 항목: ${ups.join(' · ')}`;
+  const extraTotal = R.total === null && F.total !== null ? F.total : null;     // 근무성적을 가정해 더한 예상 총점
+  return { has, same, b, f, d, ups, extraTotal };
+}
+function planSummaryHtml() {
+  const x = forecastData(); if (!x) return '';
+  let sub = `${x.same ? '근평 제외 합계' : '총점'} 기준`;
+  if (!x.has) sub += ' · 아직 입력한 예상이 없어 카드 기준과 같습니다';
+  else if (x.ups.length) sub += ` · 늘어난 항목: ${x.ups.join(' · ')}`;
   else sub += ' · 이 평정기준일에는 달라지는 점수가 없습니다(앞으로 학년도에 넣은 것은 아래 표의 해당 날짜 열에서 반영됩니다)';
-  const extra = R.total === null && F.total !== null ? `<div class="fs-extra">근무성적을 가정해 더한 예상 총점은 <b>${fx(F.total, 3)}</b> / ${fx(F.maxTotal, 2)}점입니다.</div>` : '';
-  return `<div class="fsum${has ? '' : ' none'}">
+  const extra = x.extraTotal !== null ? `<div class="fs-extra">근무성적을 가정해 더한 예상 총점은 <b>${fx(x.extraTotal, 3)}</b> / ${fx(F.maxTotal, 2)}점입니다.</div>` : '';
+  return `<div class="fsum${x.has ? '' : ' none'}">
     <div class="fs-h">예상 요약 <span class="muted">· 평정기준일 ${dshort(R.baseDate)}</span></div>
     <div class="fs-row">
-      <div class="fs-col"><span class="lb">카드 기준(현재)</span><b class="num">${fx(b, 3)}</b></div>
+      <div class="fs-col"><span class="lb">카드 기준(현재)</span><b class="num">${fx(x.b, 3)}</b></div>
       <span class="fs-arrow" aria-hidden="true">→</span>
-      <div class="fs-col strong"><span class="lb">예상</span><b class="num">${fx(f, 3)}</b></div>
-      <div class="fs-d${d > 0.0005 ? ' up' : ''}">${d >= -0.0005 ? '＋' : '−'}${fx(Math.abs(d), 3)}</div>
+      <div class="fs-col strong"><span class="lb">예상</span><b class="num">${fx(x.f, 3)}</b></div>
+      <div class="fs-d${x.d > 0.0005 ? ' up' : ''}">${x.d >= -0.0005 ? '＋' : '−'}${fx(Math.abs(x.d), 3)}</div>
     </div>
     <div class="fs-sub">${sub}</div>${extra}
+  </div>`;
+}
+/** 오른쪽 점수 카드 바로 아래에 한 칸 더 — 전망 입력이 있을 때만(어느 탭에서든 스크롤 없이 예상을 본다) */
+function forecastCardHtml() {
+  const x = forecastData(); if (!x || !x.has) return '';
+  const ups = x.ups.length ? `늘어난 항목: ${x.ups.join(' · ')}` : '이 평정기준일에는 달라지는 점수가 없습니다(앞으로 학년도에 넣은 것은 전망 탭 표에서)';
+  return `<div class="card fcard">
+    <div class="fc-h"><b>예상 점수</b><button type="button" class="step-link" data-act="tab" data-tab="plan">전망 탭에서 고치기</button></div>
+    <div class="fc-row"><span class="fc-val num">${fx(x.f, 3)}</span><span class="fc-of">/ ${fx(F.maxTotal, 2)}점${x.same ? ' (근평 제외)' : ''}</span><span class="fc-d${x.d > 0.0005 ? ' up' : ''}">${x.d >= -0.0005 ? '＋' : '−'}${fx(Math.abs(x.d), 3)}</span></div>
+    <div class="fc-sub">카드 기준 ${fx(x.b, 3)} → 예상 · ${ups}</div>${x.extraTotal !== null ? `<div class="fc-sub">근무성적을 가정해 더한 예상 총점 <b>${fx(x.extraTotal, 3)}</b> / ${fx(F.maxTotal, 2)}점</div>` : ''}
   </div>`;
 }
 
@@ -2828,6 +2858,7 @@ function renderResult() {
       <div class="sub xs">인사기록카드·입력한 기록 기준입니다. 앞으로 채울 것의 예상은 <button type="button" class="step-link" data-act="tab" data-tab="plan">전망 탭</button>에서 봅니다.</div>
       <ul class="meters">${mHtml}</ul>
     </div>
+    ${forecastCardHtml()}
     ${checks.length ? `<div class="card"><h3>확인이 필요한 것 <span class="badge warn">${checks.length}</span></h3><ul class="list">${checks.map(c => `<li><span class="ic ${c.cls}">${ic[c.cls]}</span><span>${c.html}</span></li>`).join('')}</ul></div>` : ''}
     ${tips.length ? `<div class="card"><h3>점수를 올릴 수 있는 곳</h3><ul class="list">${tips.map(t => `<li><span class="ic ok">＋</span><span>${t.html}</span></li>`).join('')}</ul>${caps.length ? `<p class="foot" style="margin-top:10px">이미 상한에 닿아 더 늘려도 변화가 없는 항목: ${caps.join(' · ')}</p>` : ''}</div>` : (caps.length ? `<div class="card"><p class="foot">상한에 닿은 항목: ${caps.join(' · ')}</p></div>` : '')}
     <details class="help" data-help="result"${ui.helpClosed && ui.helpClosed.result ? '' : ' open'}><summary><span class="hi" aria-hidden="true">?</span>결과 보는 법</summary><div class="help-body">
@@ -2838,7 +2869,7 @@ function renderResult() {
       <p><span class="k">점수를 올릴 수 있는 곳</span>지금 입력한 값에서 더 얻을 수 있는 점수를 큰 순서로 보여 줍니다.</p>
     </div></details>
     <p class="foot">참고용 계산입니다. 최종 점수는 학교 평정과 교육청 확인을 거쳐 확정됩니다. 입력한 내용은 저장하지도, 서버로 보내지도 않습니다(새로 고치면 사라지니 필요하면 “입력값 저장”으로 파일을 받아 두세요).</p>`;
-  $('#minibar').innerHTML = `<div><div class="eyebrow xs muted">${esc(K.label)}${pend ? ' · 근평 제외' : ''}</div><div class="mb-val num">${fx(shown, 3)}<span class="muted small"> / ${fx(R.maxTotal, 2)}</span></div></div><div class="mb-sub">평정기준일<br>${dshort(R.baseDate)}</div>`;
+  $('#minibar').innerHTML = `<div><div class="eyebrow xs muted">${esc(K.label)}${pend ? ' · 근평 제외' : ''}</div><div class="mb-val num">${fx(shown, 3)}<span class="muted small"> / ${fx(R.maxTotal, 2)}</span></div>${(() => { const x = forecastData(); return x && x.has ? `<div class="mb-fc">예상 <b>${fx(x.f, 3)}</b> ${x.d >= -0.0005 ? '＋' : '−'}${fx(Math.abs(x.d), 3)}</div>` : ''; })()}</div><div class="mb-sub">평정기준일<br>${dshort(R.baseDate)}</div>`;
 }
 
 /* ───────── 탭 위 '확인 필요' 점 ───────── */

@@ -389,3 +389,17 @@ table.proj thead th .xs { font-weight: 400; }
 .yr-tools .inl { display: flex; align-items: center; gap: 8px; }
 .yr-tools .inl .lb { white-space: nowrap; }
 .yr-tools .inl input { width: 78px; }
+
+/* 오른쪽 점수 아래 '예상 점수' 카드 */
+.fcard { border-color: var(--accent); background: color-mix(in srgb, var(--accent-soft) 40%, var(--surface)); padding: 14px 18px; }
+.fc-h { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; font-size: 14px; }
+.fc-h b { font-weight: 600; }
+.fc-h .step-link { font-size: 12.5px; }
+.fc-row { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 10px; margin-top: 4px; }
+.fc-val { font-size: 38px; font-weight: 600; line-height: 1.05; letter-spacing: -.02em; color: var(--accent); }
+.fc-of { font-size: 14px; color: var(--ink-3); }
+.fc-d { margin-left: auto; font-size: 15px; font-weight: 700; color: var(--ink-3); font-variant-numeric: tabular-nums; }
+.fc-d.up { color: var(--accent); }
+.fc-sub { font-size: 12.5px; color: var(--ink-2); margin-top: 6px; line-height: 1.5; }
+.minibar .mb-fc { font-size: 12px; color: var(--accent); line-height: 1.2; margin-top: 1px; font-variant-numeric: tabular-nums; }
+.minibar .mb-fc b { font-weight: 700; }
