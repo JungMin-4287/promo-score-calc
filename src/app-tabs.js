@@ -112,10 +112,11 @@ const HELP = {
       '<b>학년도별 예상</b>에서 올해(평정기준일이 속한 학년도)와 앞으로 학년도에 할 수 있는 것을 정합니다: 보직교사·담임·근무학교 유형·연구학교·학교폭력 실적·추가 연수 시간. 카드에 이미 있는 항목은 ✓로 표시됩니다.',
       '<b>근무성적 예상</b>에 아직 모르는 학년도(올해 등)나 앞으로의 점수를 가정해 적습니다.',
       '이수할 60시간 이상 직무연수는 <b>예정 직무연수</b>에, 연구대회 입상·학위 취득 계획은 <b>예정 입상·학위</b>에 넣습니다.',
+      '<b>예상 평정기준일</b>을 앞으로 4~5년 뒤로 옮기면 그날 명부 기준 예상을 봅니다. 그 해까지 학년도 칸이 필요하니 <b>학년도 칸 채우기</b>로 비어 있는 해를 만들고 해마다 고칩니다.',
       '맨 위 <b>예상 요약</b>에서 카드 기준 점수와 예상 점수를 비교하고, 맨 아래 표·그래프에서 해마다 변화를 봅니다.',
     ],
     whereLabel: '보는 법',
-    where: '요약은 평정기준일 현재의 카드 기준 점수와 예상 점수, 늘어난 항목을 보여 줍니다. 표의 첫 열이 카드 기준이고, 이어서 날짜별 예상이 나옵니다. 직무연수가 10년이 지나 빠지는 시점은 주황색 안내로 알려 줍니다.',
+    where: '요약은 카드 기준 점수(기본 평정기준일 현재)와 예상 평정기준일의 예상 점수, 시간이 지나서 달라지는 몫(근무 경력이 늘고 오래된 연수가 빠지는 것)과 입력한 예상으로 달라지는 몫을 보여 줍니다. 표의 첫 열이 카드 기준이고, 이어서 날짜별 예상이 나옵니다. 직무연수가 10년이 지나 빠지는 시점은 주황색 안내로 알려 줍니다.',
     read: '가정에 따른 계산이라 확정 점수가 아닙니다. 평정기준일을 늦춰도 이 입력은 그대로 쓰이며, 왼쪽 점수는 늘 카드(입력한 실제 기록) 기준입니다.',
   },
   ref: {
@@ -463,7 +464,7 @@ function pperiodRow(i) { return prowHtml('plan.periods', i, state.plan.periods[i
 function planPerfSection() {
   const Y = yearOf(curBase());
   const last = state.plan.years.length ? Math.max(...state.plan.years.map(y => +y.year)) : 0;
-  const to = Math.max(Y - 1, last), from = Y - 5;
+  const to = Math.max(Y - 1, last, yearOf(forecastDate()) - 1), from = Y - 5;
   let rows = '';
   for (let y = to; y >= from; y--) {
     const act = state.perf[y], pv = state.plan.perf[y];
@@ -477,19 +478,35 @@ function planPerfSection() {
     <div class="grid" style="margin-top:10px">${fl('비어 있는 학년도를 한꺼번에 이 점수로 가정', nm('plan.perfFill', { ph: '예: 99' }), 'c6')}</div>`;
 }
 
-function projectionDates(b0) {
-  const Y = yearOf(b0);
-  let first = E.schoolYearEnd(Y - 1);              // Y.2.28(29)
-  if (first <= b0) first = E.schoolYearEnd(Y);     // 이미 지났으면 다음 해 2월 말
-  const y = yearOf(first);
-  const out = [b0];
-  for (let k = 0; k < 4; k++) out.push(E.schoolYearEnd(y - 1 + k));
-  return out.filter((d, i) => out.indexOf(d) === i);
+/** 표·그래프에 올릴 날짜: 기본 평정기준일 + 4개 학년도 말, 예상 평정기준일이 더 뒤면 거기까지 */
+function projectionDates(b0, target) {
+  let dates = yearEnds(b0, 4);
+  if (target && target > dates[dates.length - 1]) dates = dates.concat(yearEnds(b0, 12).filter(d => d > dates[dates.length - 1] && d <= target));
+  if (target && dates.indexOf(target) < 0) { dates.push(target); dates.sort(); }
+  return dates;
 }
 /** 날짜별 { r: 예상(전망 입력 반영), b: 추가 없이(카드 기준) } */
 function projection() {
   const eff = E.applyPlan(state);
-  return projectionDates(curBase()).map(d => ({ date: d, r: E.compute(eff, d), b: E.compute(state, d) }));
+  return projectionDates(curBase(), forecastDate()).map(d => ({ date: d, r: E.compute(eff, d), b: E.compute(state, d) }));
+}
+/** 예상 평정기준일까지 학년도 칸이 비어 있는 해(올해는 빼고 앞으로 학년도만) */
+function missingPlanYears() {
+  const fd = forecastDate(); if (fd === curBase()) return [];
+  const cy = +thisYearSpan().key, tk = +E.periodKey(fd), have = new Set(state.plan.years.map(y => +y.year));
+  const out = []; for (let y = cy + 1; y <= tk; y++) if (!have.has(y)) out.push(y);
+  return out;
+}
+/** 전망에서 볼 '예상 평정기준일' 고르기 — 입력 중에도 다시 그려지지 않도록 요약 영역 밖에 둔다 */
+function planCtl() {
+  const b0 = curBase(), opts = yearEnds(b0, 6), cur = forecastDate();
+  const chip = d => `<button type="button" class="chip" data-act="set-fdate" data-v="${d === b0 ? '' : d}" aria-pressed="${d === cur}">${dshort(d)}${d === b0 ? ' (현재 명부)' : ''}</button>`;
+  return `<div class="fctl">
+    <div class="fctl-h"><b>예상 평정기준일</b><span class="muted">앞으로 어느 해 명부 기준으로 예상을 볼지 고르세요(왼쪽 점수는 ${dshort(b0)} 그대로)</span></div>
+    <div class="chips" role="group" aria-label="예상 평정기준일 바로 고르기">${opts.map(chip).join('')}</div>
+    <div class="grid" style="margin-top:8px">${fl('직접 입력(2월 말일이 아니어도 됩니다)', dt('plan.target', { ph: '예: 2031-02-28' }), 'c4')}</div>
+    <div class="fctl-note" id="fctl-note" role="status"></div>
+  </div>`;
 }
 function tabPlan() {
   const P = state.plan, teacher = isTeacher(), cy = +thisYearSpan().key;
@@ -498,6 +515,7 @@ function tabPlan() {
   return `<h2>앞으로의 전망</h2>
   <p class="lead">인사기록카드로 채운 <b>현재 점수</b>에 앞으로 채울 수 있는 연수·가산점·근무성적을 더해 <b>예상 점수</b>를 봅니다. 여기에 넣은 값은 다른 탭과 왼쪽 점수를 바꾸지 않습니다.</p>
   ${help('plan')}
+  ${planCtl()}
   <div id="plan-top"></div>
   ${sec('학년도별 예상 — 올해와 앞으로', '', `
     <div class="rows">${P.years.map((_, i) => planYearRow(i)).join('') || '<div class="empty">올해(평정기준일이 속한 학년도)와 앞으로 학년도에 할 수 있는 것을 추가하세요.</div>'}</div>

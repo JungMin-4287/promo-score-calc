@@ -90,4 +90,15 @@ ok('종료일을 적은 마지막 근무 행이면 전망 학년도가 근무를
   const r = cmp(s, '2028-02-29'); const ref = mk(); ref.career = [{ label: 'A', start: '2012-03-01', end: '', grade: '가', rate: 1 }];
   near(r.career.total, E.compute(ref, '2028-02-29').career.total, '종료일 있는 경우');
 });
+ok('예상 평정기준일 4년 뒤: 학년도 칸을 채운 만큼 부장·농어촌 가산점이 5년치 쌓이고 경력은 계속 근무 기준선과 같다', () => {
+  const s = mk(); s.plan.years = [2026, 2027, 2028, 2029, 2030].map(y => ({ year: y, career: y === 2026 ? false : undefined, school: 'rural', head: true }));
+  const r = cmp(s, '2031-02-28');
+  near(r.bonus.parts.rural.points, 0.015 * 60, '농어촌 60개월'); near(r.bonus.parts.head.points, 0.021 * 60, '부장 60개월 (카드의 2026학년도와 한 번만 센다)');
+  near(r.career.total, E.compute(mk(), '2031-02-28').career.total, '경력');
+});
+ok('예상 평정기준일을 4년 뒤로 옮기면 10년 지난 직무연수는 빠진다(전망 입력이 비어 있어도 같다)', () => {
+  const s = mk(); s.training.courses = [{ label: '옛 연수', start: '2020-07-01', end: '2020-07-20', hours: 60, score: 95, mode: '집합' }];
+  near(E.compute(s, base).training.duty, 6, '카드 기준'); near(E.compute(s, '2030-02-28').training.duty, 6, '3년 뒤(아직 10년 안)'); near(E.compute(s, '2031-02-28').training.duty, 0, '4년 뒤');
+  near(cmp(s, '2031-02-28').training.duty, 0, '전망 적용');
+});
 console.log(n + '개 확인 통과' + (process.exitCode ? ' (실패 있음)' : ''));

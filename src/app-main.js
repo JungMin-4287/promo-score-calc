@@ -220,6 +220,19 @@ function onClick(e) {
       state.bonus.violence = Array.from(set).sort();
       commit(true); toast(`기간 ${n}행${v ? `, 학교폭력 ${v}건` : ''}을 추가했습니다`); break;
     }
+    case 'set-fdate': state.plan.target = b.dataset.v; commit(true); break;     // 전망의 예상 평정기준일('' = 기본 평정기준일)
+    case 'fill-plan-years': {   // 예상 평정기준일까지 비어 있는 학년도 칸을 앞 학년도와 같게 채운다
+      const ys = state.plan.years, cy = +thisYearSpan().key, tk = +E.periodKey(forecastDate());
+      for (let y = cy + 1; y <= tk; y++) {
+        if (ys.some(r => +r.year === y)) continue;
+        const prev = ys.filter(r => +r.year < y).sort((p, q) => q.year - p.year)[0];
+        const nw = prev ? Object.assign({}, prev, { year: y }) : { year: y, head: false, homeroom: false, school: 'none', research: 'none', violence: false, hours: '' };
+        delete nw.career;
+        ys.push(nw);
+      }
+      ys.sort((p, q) => p.year - q.year);
+      commit(true); break;
+    }
     case 'add-plan-year': {   // 전망의 학년도 칸: 올해 / 마지막 학년도 다음 해
       const ys = state.plan.years, cy = +thisYearSpan().key;
       if (b.dataset.which === 'this') {

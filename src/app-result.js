@@ -104,21 +104,21 @@ Object.assign(DRV, {
       if (slot && slot.slot === '성적') b = badge('ok', `성적 1건 · 환산 ${slot.conv}점 → ${fx(slot.points, 3)}점`);
       else if (slot) b = badge('ok', '이수실적 6점');
       else b = badge('info', '인정되지만 3건 한도 밖(점수 반영 없음)');
-    } else if (c.status === 'future') b = badge('info', `평정기준일(${dshort(R.baseDate)}) 이후 종료 — 다음 해 명부부터 반영`);
+    } else if (c.status === 'future') b = badge('info', `예상 평정기준일(${dshort(forecastDate())}) 이후 종료 — 그다음 해 명부부터 반영`);
     else b = badge('bad', `불인정 · ${esc(c.reason)}`);
     return b;
   },
   pcontest(i) {
     const c = F && F.training.research.contests[state.training.contests.length + i]; if (!c) return '';
     if (!c.date) return '<span class="muted">입상 예정일을 입력하세요</span>';
-    if (c.date > R.baseDate) return badge('info', `평정기준일(${dshort(R.baseDate)}) 이후 — 다음 해 명부부터 반영`);
+    if (c.date > forecastDate()) return badge('info', `예상 평정기준일(${dshort(forecastDate())}) 이후 — 그다음 해 명부부터 반영`);
     if (c.dup) return badge('warn', '같은 학년도에 더 높은 실적이 있어 제외');
     return `${badge('ok', fx(c.points, 3) + '점')} <span class="muted">${c.key}학년도 입상 기준</span>`;
   },
   pdegree(i) {
     const g = state.plan.degrees[i]; if (!g || !F) return '';
     const t = E.DEGREE[g.level]; const pts = g.related ? t.related : t.other;
-    if (g.date && E.norm(g.date) && E.norm(g.date) > R.baseDate) return badge('info', `평정기준일(${dshort(R.baseDate)}) 이후 — 다음 해 명부부터 반영`);
+    if (g.date && E.norm(g.date) && E.norm(g.date) > forecastDate()) return badge('info', `예상 평정기준일(${dshort(forecastDate())}) 이후 — 그다음 해 명부부터 반영`);
     const d = F.training.research.degree;
     if (d && d.i === state.training.degrees.length + i) return `${badge('ok', pts + '점 인정')} <span class="muted">${g.related ? '직무 관련' : '직무 관련 아님'}</span>`;
     return badge('warn', `${pts}점이지만 다른 학위가 더 높아 제외(하나만 인정)`);
@@ -145,6 +145,16 @@ function paintDerived() {
     try { el.innerHTML = fn ? fn(arg === '' ? undefined : (/^\d+$/.test(arg) && type !== 'perf' && type !== 'yh' ? +arg : arg)) : ''; } catch (e) { el.innerHTML = ''; }
   });
   paintTables();
+  paintFctl();
+}
+/** 전망 탭의 예상 평정기준일 — 날짜를 직접 입력해도 칩 선택 표시가 맞게 하고, 반영되지 않는 입력은 알린다 */
+function paintFctl() {
+  if (!$('.fctl')) return;
+  const cur = forecastDate(), base = curBase();
+  $$('.fctl .chip').forEach(c => c.setAttribute('aria-pressed', String((c.dataset.v || base) === cur)));
+  const note = $('#fctl-note'); if (!note) return;
+  const raw = String(state.plan.target || '').trim(), n = E.norm(raw);
+  note.textContent = !raw ? '' : (!n ? '날짜를 2031-02-28 꼴로 적어 주세요. 그동안은 기본 평정기준일로 봅니다.' : (n <= base ? `기본 평정기준일(${dshort(base)}) 이후 날짜를 적어야 예상에 반영됩니다.` : ''));
 }
 
 function paintTables() {
@@ -203,62 +213,74 @@ function paintTables() {
 }
 
 /* ───────── 전망: 예상 요약 · 표 + 선 그래프 ───────── */
-/** 예상 점수 요약에 쓰는 값 — 전망 탭 요약과 오른쪽 점수 아래 카드가 같이 쓴다 */
+const sgn = v => `${v >= -0.0005 ? '+' : '−'}${fx(Math.abs(v), 3)}`;
+/** 예상 점수 요약에 쓰는 값 — 전망 탭 요약과 오른쪽 점수 아래 카드가 같이 쓴다
+ *  b: 카드 기준(기본 평정기준일 현재) · t: 예상 평정기준일에 '추가 없이' · f: 예상 평정기준일에 입력한 예상까지 반영 */
 function forecastData() {
-  if (!R || !F) return null;
+  if (!R || !F || !FB) return null;
+  const fd = forecastDate(), same0 = fd === R.baseDate;
   const has = planCount() > 0;
-  const same = R.total === null || F.total === null;           // 한쪽이라도 근평이 없으면 같은 기준(근평 제외)으로 견준다
-  const b = same ? R.sumWithoutPerf : R.total, f = same ? F.sumWithoutPerf : F.total, d = f - b;
-  const cats = [['경력평정', R.career.total, F.career.total], ['자격연수', R.training.qual.points, F.training.qual.points], ['직무연수', R.training.duty, F.training.duty],
-    ...(isTeacher() ? [['연구실적', R.training.researchPoints, F.training.researchPoints]] : []), ['가산점 공통', R.bonus.common, F.bonus.common], ['가산점 선택', R.bonus.select, F.bonus.select]];
-  if (!same) cats.splice(1, 0, ['근무성적', R.perf.value, F.perf.value]);
-  const ups = cats.filter(([, x, y]) => x !== null && y !== null && Math.abs(y - x) > 0.0005).map(([n, x, y]) => `${n} ${y - x > 0 ? '+' : ''}${fx(y - x, 3)}`);
-  const extraTotal = R.total === null && F.total !== null ? F.total : null;     // 근무성적을 가정해 더한 예상 총점
-  return { has, same, b, f, d, ups, extraTotal };
+  const same = R.total === null || F.total === null || FB.total === null;     // 근평이 비어 있는 쪽이 있으면 같은 기준(근평 제외)으로 견준다
+  const val = r => (same ? r.sumWithoutPerf : r.total);
+  const diff = (A, B) => {
+    const rows = [['경력평정', A.career.total, B.career.total], ['자격연수', A.training.qual.points, B.training.qual.points], ['직무연수', A.training.duty, B.training.duty],
+      ...(isTeacher() ? [['연구실적', A.training.researchPoints, B.training.researchPoints]] : []), ['가산점 공통', A.bonus.common, B.bonus.common], ['가산점 선택', A.bonus.select, B.bonus.select]];
+    if (!same) rows.splice(1, 0, ['근무성적', A.perf.value, B.perf.value]);
+    return rows.filter(([, x, y]) => x !== null && y !== null && Math.abs(y - x) > 0.0005).map(([n, x, y]) => `${n} ${y - x > 0 ? '+' : ''}${fx(y - x, 3)}`);
+  };
+  const b = val(R), t = val(FB), f = val(F);
+  const extraTotal = (R.total === null || FB.total === null) && F.total !== null ? F.total : null;     // 근무성적을 가정해 더한 예상 총점
+  return { has, same, same0, fd, b, t, f, d: f - b, time: t - b, add: f - t, ups: diff(FB, F), timeUps: same0 ? [] : diff(R, FB), extraTotal, missing: missingPlanYears() };
 }
 function planSummaryHtml() {
   const x = forecastData(); if (!x) return '';
-  let sub = `${x.same ? '근평 제외 합계' : '총점'} 기준`;
-  if (!x.has) sub += ' · 아직 입력한 예상이 없어 카드 기준과 같습니다';
-  else if (x.ups.length) sub += ` · 늘어난 항목: ${x.ups.join(' · ')}`;
-  else sub += ' · 이 평정기준일에는 달라지는 점수가 없습니다(앞으로 학년도에 넣은 것은 아래 표의 해당 날짜 열에서 반영됩니다)';
+  const when = dshort(x.fd);
+  const parts = [`${x.same ? '근평 제외 합계' : '총점'} 기준`];
+  if (!x.same0) parts.push(`시간이 지나서 ${sgn(x.time)}${x.timeUps.length ? ` (${x.timeUps.join(' · ')})` : ''}`);
+  parts.push(x.ups.length ? `입력한 예상으로 ${sgn(x.add)} (${x.ups.join(' · ')})` : (x.has ? '입력한 예상으로 달라지는 점수는 없습니다' + (x.same0 ? '(앞으로 학년도에 넣은 것은 예상 평정기준일을 뒤로 옮기면 반영됩니다)' : '') : '아직 입력한 예상이 없습니다'));
   const extra = x.extraTotal !== null ? `<div class="fs-extra">근무성적을 가정해 더한 예상 총점은 <b>${fx(x.extraTotal, 3)}</b> / ${fx(F.maxTotal, 2)}점입니다.</div>` : '';
-  return `<div class="fsum${x.has ? '' : ' none'}">
-    <div class="fs-h">예상 요약 <span class="muted">· 평정기준일 ${dshort(R.baseDate)}</span></div>
+  const miss = x.missing.length ? `<div class="fs-warn"><span>예상 평정기준일이 ${when}이라 <b>${x.missing.map(y => y + '학년도').join(' · ')}</b> 칸이 필요합니다. 비어 있으면 그 해의 부장·담임·연수 등이 반영되지 않고 근무만 이어지는 것으로 계산합니다.</span><button type="button" class="btn sm" data-act="fill-plan-years" title="마지막으로 입력한 학년도와 같게 채웁니다">학년도 칸 채우기</button></div>` : '';
+  return `<div class="fsum${x.has || !x.same0 ? '' : ' none'}">
+    <div class="fs-h">예상 요약 <span class="muted">· 예상 평정기준일 ${when}</span></div>
     <div class="fs-row">
-      <div class="fs-col"><span class="lb">카드 기준(현재)</span><b class="num">${fx(x.b, 3)}</b></div>
+      <div class="fs-col"><span class="lb">카드 기준(현재 ${dshort(R.baseDate)})</span><b class="num">${fx(x.b, 3)}</b></div>
       <span class="fs-arrow" aria-hidden="true">→</span>
-      <div class="fs-col strong"><span class="lb">예상</span><b class="num">${fx(x.f, 3)}</b></div>
+      <div class="fs-col strong"><span class="lb">예상(${when})</span><b class="num">${fx(x.f, 3)}</b></div>
       <div class="fs-d${x.d > 0.0005 ? ' up' : ''}">${x.d >= -0.0005 ? '＋' : '−'}${fx(Math.abs(x.d), 3)}</div>
     </div>
-    <div class="fs-sub">${sub}</div>${extra}
+    <div class="fs-sub">${parts.join(' · ')}</div>${extra}${miss}
   </div>`;
 }
-/** 오른쪽 점수 카드 바로 아래에 한 칸 더 — 전망 입력이 있을 때만(어느 탭에서든 스크롤 없이 예상을 본다) */
+/** 오른쪽 점수 카드 바로 아래에 한 칸 더 — 전망 입력이 있거나 예상 평정기준일을 뒤로 옮겼을 때(어느 탭에서든 스크롤 없이 예상을 본다) */
 function forecastCardHtml() {
-  const x = forecastData(); if (!x || !x.has) return '';
-  const ups = x.ups.length ? `늘어난 항목: ${x.ups.join(' · ')}` : '이 평정기준일에는 달라지는 점수가 없습니다(앞으로 학년도에 넣은 것은 전망 탭 표에서)';
+  const x = forecastData(); if (!x || !(x.has || !x.same0)) return '';
+  const parts = [];
+  if (!x.same0) parts.push(`시간이 지나서 ${sgn(x.time)}`);
+  parts.push(x.ups.length ? `입력한 예상으로 ${sgn(x.add)} (${x.ups.join(' · ')})` : '입력한 예상으로 달라지는 점수는 없습니다');
+  const extra = x.extraTotal !== null ? `<div class="fc-sub">근무성적을 가정해 더한 예상 총점 <b>${fx(x.extraTotal, 3)}</b> / ${fx(F.maxTotal, 2)}점</div>` : '';
+  const miss = x.missing.length ? `<div class="fc-sub fc-warn">${x.missing.map(y => y + '학년도').join('·')} 칸이 비어 있어 그 해 입력이 빠져 있습니다 — 전망 탭에서 채우세요.</div>` : '';
   return `<div class="card fcard">
-    <div class="fc-h"><b>예상 점수</b><button type="button" class="step-link" data-act="tab" data-tab="plan">전망 탭에서 고치기</button></div>
+    <div class="fc-h"><b>예상 점수${x.same0 ? '' : ` <span class="fc-date">· ${dshort(x.fd)}</span>`}</b><button type="button" class="step-link" data-act="tab" data-tab="plan">전망 탭에서 고치기</button></div>
     <div class="fc-row"><span class="fc-val num">${fx(x.f, 3)}</span><span class="fc-of">/ ${fx(F.maxTotal, 2)}점${x.same ? ' (근평 제외)' : ''}</span><span class="fc-d${x.d > 0.0005 ? ' up' : ''}">${x.d >= -0.0005 ? '＋' : '−'}${fx(Math.abs(x.d), 3)}</span></div>
-    <div class="fc-sub">카드 기준 ${fx(x.b, 3)} → 예상 · ${ups}</div>${x.extraTotal !== null ? `<div class="fc-sub">근무성적을 가정해 더한 예상 총점 <b>${fx(x.extraTotal, 3)}</b> / ${fx(F.maxTotal, 2)}점</div>` : ''}
+    <div class="fc-sub">카드 기준 ${fx(x.b, 3)}${x.same0 ? '' : `(${dshort(R.baseDate)})`} → 예상 · ${parts.join(' · ')}</div>${extra}${miss}
   </div>`;
 }
 
 function renderProjection() {
   const cols = projection();
+  const fd = forecastDate(), tIdx = cols.findIndex(c => c.date === fd);
   const teacher = isTeacher(), has = planCount() > 0;
   const pend = cols.some(c => c.r.total === null || c.b.total === null);
   const val = r => (pend ? r.sumWithoutPerf : r.total);
   const vals = [cols[0].b].concat(cols.map(c => c.r));          // 첫 열 = 카드 기준 현재, 이어서 날짜별 예상
   const bs = [cols[0].b].concat(cols.map(c => c.b));            // 같은 날짜에 '추가 없이'(카드 기준 그대로 근무만 이어질 때)
-  const head = `<th>평정기준일</th><th class="cardcol">카드 기준<br><span class="xs">${dshort(cols[0].date)}</span></th>${cols.map(c => `<th>예상<br><span class="xs">${dshort(c.date)}</span></th>`).join('')}`;
+  const head = `<th>평정기준일</th><th class="cardcol">카드 기준<br><span class="xs">${dshort(cols[0].date)}</span></th>${cols.map(c => `<th class="${c.date === fd ? 'target' : ''}">예상<br><span class="xs">${dshort(c.date)}</span>${c.date === fd ? '<br><span class="badge info">요약 기준</span>' : ''}</th>`).join('')}`;
   const line = (label, get, dec = 3, cls = '') => {
     const v = vals.map(get);
     const tds = v.map((x, i) => {
       const prev = i === 0 ? null : v[i - 1];       // 예상 첫 열은 카드 기준과, 그 뒤는 앞 열과 견준다
       const up = i > 0 && x !== null && prev !== null && x > prev + 1e-9;
-      return `<td class="${i === 0 ? 'cardcol ' : ''}${up ? 'up' : (x === null ? 'nil' : '')}">${x === null ? '—' : fx(x, dec)}${up ? ` <span class="xs">▲${fx(x - prev, 3)}</span>` : ''}</td>`;
+      return `<td class="${i === 0 ? 'cardcol ' : ''}${i - 1 === tIdx ? 'target ' : ''}${up ? 'up' : (x === null ? 'nil' : '')}">${x === null ? '—' : fx(x, dec)}${up ? ` <span class="xs">▲${fx(x - prev, 3)}</span>` : ''}</td>`;
     }).join('');
     return `<tr class="${cls}"><td>${label}</td>${tds}</tr>`;
   };
@@ -272,8 +294,8 @@ function renderProjection() {
     ${line('가산점 선택(9.91)', r => r.bonus.select)}
     ${line('근평 제외 합계', r => r.sumWithoutPerf)}
     ${line('총점', r => r.total, 3, 'tot')}
-    <tr class="sep"><td>추가 없이(카드 기준) ${pend ? '근평 제외 합계' : '총점'}</td>${bs.map((r, i) => `<td class="${i === 0 ? 'cardcol' : ''}">${fx(val(r), 3)}</td>`).join('')}</tr>
-    <tr><td>예상 − 추가 없이</td><td class="cardcol">—</td>${cols.map(c => { const d = val(c.r) - val(c.b); return `<td class="${d > 0.0005 ? 'up' : ''}">${d >= -0.0005 ? '+' : '−'}${fx(Math.abs(d), 3)}</td>`; }).join('')}</tr>
+    <tr class="sep"><td>추가 없이(카드 기준) ${pend ? '근평 제외 합계' : '총점'}</td>${bs.map((r, i) => `<td class="${i === 0 ? 'cardcol' : (i - 1 === tIdx ? 'target' : '')}">${fx(val(r), 3)}</td>`).join('')}</tr>
+    <tr><td>예상 − 추가 없이</td><td class="cardcol">—</td>${cols.map(c => { const d = val(c.r) - val(c.b); return `<td class="${c.date === fd ? 'target ' : ''}${d > 0.0005 ? 'up' : ''}">${d >= -0.0005 ? '+' : '−'}${fx(Math.abs(d), 3)}</td>`; }).join('')}</tr>
   </tbody></table></div>`;
   // 선 그래프: 예상(실선) · 추가 없이(점선)
   const A = cols.map(c => val(c.r)), Bv = cols.map(c => val(c.b));
@@ -296,7 +318,7 @@ function renderProjection() {
     ${ticks.map(t => `<line class="grid-l" x1="${L}" x2="${W - Rm}" y1="${y(t).toFixed(1)}" y2="${y(t).toFixed(1)}"/><text x="${L - 8}" y="${(y(t) + 4).toFixed(1)}" text-anchor="end">${Math.round(t)}</text>`).join('')}
     <path class="ar" d="${area}"/>${showB ? `<path class="ln base" d="${pathB}"/>` : ''}<path class="ln" d="${path}"/>
     ${pts.map((p, i) => `<g><circle class="dt" cx="${p[0].toFixed(1)}" cy="${p[1].toFixed(1)}" r="5"/><circle class="hit" cx="${p[0].toFixed(1)}" cy="${p[1].toFixed(1)}" r="16"><title>${dshort(cols[i].date)} 예상 ${what} ${fx(A[i], 3)}${showB ? ` · 추가 없이 ${fx(Bv[i], 3)}` : ''}</title></circle></g>`).join('')}
-    ${pts.map((p, i) => (i === 0 || i === pts.length - 1) ? `<text class="lbl" x="${p[0].toFixed(1)}" y="${(p[1] - 11).toFixed(1)}" text-anchor="${i === 0 ? 'start' : 'end'}">${fx(A[i], 3)}</text>` : '').join('')}
+    ${pts.map((p, i) => (i === 0 || i === pts.length - 1 || i === tIdx) ? `<text class="lbl" x="${p[0].toFixed(1)}" y="${(p[1] - 11).toFixed(1)}" text-anchor="${i === 0 ? 'start' : 'end'}">${fx(A[i], 3)}</text>` : '').join('')}
     ${showB ? `<text class="lbl base" x="${pb[pb.length - 1][0].toFixed(1)}" y="${(pb[pb.length - 1][1] + 17).toFixed(1)}" text-anchor="end">${fx(Bv[Bv.length - 1], 3)}</text>` : ''}
     ${pts.map((p, i) => `<text x="${p[0].toFixed(1)}" y="${H - 10}" text-anchor="${i === 0 ? 'start' : i === pts.length - 1 ? 'end' : 'middle'}">${dshort(cols[i].date)}</text>`).join('')}
   </svg>`;
@@ -422,7 +444,7 @@ function renderResult() {
       <p><span class="k">점수를 올릴 수 있는 곳</span>지금 입력한 값에서 더 얻을 수 있는 점수를 큰 순서로 보여 줍니다.</p>
     </div></details>
     <p class="foot">참고용 계산입니다. 최종 점수는 학교 평정과 교육청 확인을 거쳐 확정됩니다. 입력한 내용은 저장하지도, 서버로 보내지도 않습니다(새로 고치면 사라지니 필요하면 “입력값 저장”으로 파일을 받아 두세요).</p>`;
-  $('#minibar').innerHTML = `<div><div class="eyebrow xs muted">${esc(K.label)}${pend ? ' · 근평 제외' : ''}</div><div class="mb-val num">${fx(shown, 3)}<span class="muted small"> / ${fx(R.maxTotal, 2)}</span></div>${(() => { const x = forecastData(); return x && x.has ? `<div class="mb-fc">예상 <b>${fx(x.f, 3)}</b> ${x.d >= -0.0005 ? '＋' : '−'}${fx(Math.abs(x.d), 3)}</div>` : ''; })()}</div><div class="mb-sub">평정기준일<br>${dshort(R.baseDate)}</div>`;
+  $('#minibar').innerHTML = `<div><div class="eyebrow xs muted">${esc(K.label)}${pend ? ' · 근평 제외' : ''}</div><div class="mb-val num">${fx(shown, 3)}<span class="muted small"> / ${fx(R.maxTotal, 2)}</span></div>${(() => { const x = forecastData(); return x && (x.has || !x.same0) ? `<div class="mb-fc">예상${x.same0 ? '' : '(' + dshort(x.fd) + ')'} <b>${fx(x.f, 3)}</b> ${x.d >= -0.0005 ? '＋' : '−'}${fx(Math.abs(x.d), 3)}</div>` : ''; })()}</div><div class="mb-sub">평정기준일<br>${dshort(R.baseDate)}</div>`;
 }
 
 /* ───────── 탭 위 '확인 필요' 점 ───────── */

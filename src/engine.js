@@ -721,7 +721,7 @@
       perf: {},
       training: { qual: { name: '중등1정교사자격', label: '', start: '', end: '', score: '', full: 100 }, courses: [], contests: [], degrees: [] },
       bonus: { periods: [], yearHours: {}, violence: [], cert: 0, national: 0, other: 0 },
-      plan: { years: [], courses: [], contests: [], degrees: [], periods: [], perf: {}, perfFill: '', careerGrade: '가' },
+      plan: { years: [], courses: [], contests: [], degrees: [], periods: [], perf: {}, perfFill: '', target: '', careerGrade: '가' },
     };
   }
 

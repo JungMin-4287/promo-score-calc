@@ -58,7 +58,7 @@ function normalizeState(raw) {
       violence: (s.bonus && Array.isArray(s.bonus.violence)) ? s.bonus.violence.map(String) : [],
       cert: (s.bonus && +s.bonus.cert) || 0, national: (s.bonus && +s.bonus.national) || 0, other: (s.bonus && +s.bonus.other) || 0,
     },
-    plan: Object.assign({ years: [], courses: [], contests: [], degrees: [], periods: [], perf: {}, perfFill: '', careerGrade: '가' }, s.plan || {}),
+    plan: Object.assign({ years: [], courses: [], contests: [], degrees: [], periods: [], perf: {}, perfFill: '', target: '', careerGrade: '가' }, s.plan || {}),
   };
   if (!E.KINDS[out.profile.kind]) out.profile.kind = 'g1';
   if (!E.norm(out.profile.baseDate)) out.profile.baseDate = d.profile.baseDate;
@@ -70,6 +70,7 @@ function normalizeState(raw) {
   ['courses', 'contests', 'degrees', 'periods'].forEach(k => { out.plan[k] = Array.isArray(out.plan[k]) ? out.plan[k].filter(r => r && typeof r === 'object') : []; });
   if (!out.plan.perf || typeof out.plan.perf !== 'object' || Array.isArray(out.plan.perf)) out.plan.perf = {};
   delete out.plan.on;
+  out.plan.target = E.norm(out.plan.target) || '';     // 전망에서 볼 예상 평정기준일(비우면 기본 탭의 평정기준일)
   // 예전 파일 변환 ① 학년도 행에 적던 근무성적 → 근무성적 예상값
   out.plan.years.forEach(y => { if (y.perf !== undefined && y.perf !== null && y.perf !== '' && out.plan.perf[y.year] === undefined) out.plan.perf[y.year] = y.perf; delete y.perf; });
   // ② 한때 '가상(예정)' 표시로 실제 목록에 섞어 두던 항목 → 전망으로 옮긴다(실제 기록은 카드 값만 남긴다)
@@ -131,14 +132,15 @@ function sampleState() {
       ],
       courses: [{ label: '겨울방학 직무연수(예정)', start: '2027-01-11', end: '2027-01-29', hours: 60, score: 96, mode: '집합' }],
       contests: [], degrees: [], periods: [],
-      perf: { 2026: 99.6, 2027: 99.6, 2028: 99.6, 2029: 99.6 }, perfFill: '',
+      perf: { 2026: 99.6, 2027: 99.6, 2028: 99.6, 2029: 99.6 }, perfFill: '', target: '2030-02-28',
     },
   });
 }
 
 let state, ui = { tab: 'basic', sample: false, dirty: false, pasteCat: 'rural', helpClosed: {} };
 let R = null;            // 현재 평정기준일 결과 — 인사기록카드·입력한 실제 기록만(전망 입력은 넣지 않는다)
-let F = null;            // 같은 날짜의 예상 결과 — 실제 기록 위에 전망 탭의 입력을 얹은 값(전망 탭에서만 쓴다)
+let F = null;            // 예상 결과 — 실제 기록 위에 전망 탭의 입력을 얹어 '예상 평정기준일'에 계산한 값(전망 탭·예상 카드에서만 쓴다)
+let FB = null;           // 같은 예상 평정기준일에 '추가 없이'(카드 기준 그대로 근무만 이어질 때) 계산한 값. 예상 평정기준일이 기본 평정기준일이면 R 과 같은 객체
 
 function initState() {
   state = sampleState();
@@ -157,10 +159,23 @@ function recompute() {
   const base = bd || lastGoodBase || '2027-02-28';
   R = E.compute(state, base);          // 왼쪽 점수·각 탭은 카드 기준 — 예상은 전망 탭에서만
   R.invalidBase = !bd;
-  F = forecastAt(base);
+  const fd = forecastDate();
+  F = forecastAt(fd);
+  FB = fd === base ? R : E.compute(state, fd);
 }
 /** 전망(예상) 계산: 실제 기록 위에 전망 입력을 얹어 d 날짜 기준으로 계산 */
 const forecastAt = d => E.compute(E.applyPlan(state), d);
+/** 전망에서 볼 예상 평정기준일 — 기본 평정기준일보다 뒤일 때만 따로 쓰고, 아니면 기본 평정기준일 */
+function forecastDate() { const b = curBase(), t = E.norm(state.plan.target); return t && t > b ? t : b; }
+/** b0 와 그 뒤 n개의 학년도 말(2월 말일) */
+function yearEnds(b0, n) {
+  const Y = yearOf(b0);
+  let first = E.schoolYearEnd(Y - 1);              // Y.2.28(29)
+  if (first <= b0) first = E.schoolYearEnd(Y);     // 이미 지났으면 다음 해 2월 말
+  const y = yearOf(first), out = [b0];
+  for (let k = 0; k < n; k++) out.push(E.schoolYearEnd(y - 1 + k));
+  return out.filter((d, i) => out.indexOf(d) === i);
+}
 
 /* ───────── 파일 저장·불러오기 ───────── */
 let DL = null;   // downloads 기능(아티팩트 뷰어에서만)
