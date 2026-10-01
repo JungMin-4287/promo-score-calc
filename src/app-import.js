@@ -146,7 +146,7 @@ function importReport(res, readOnly) {
     ? `<h3 class="imp-h">확인할 점 ${res.warn.length}건</h3><ol class="warns">${res.warn.map(w => `<li>${esc(w)}</li>`).join('')}</ol>`
     : '<p class="note">특별히 확인할 점은 없습니다.</p>';
   const notIn = '<p class="note">카드에 없어 채우지 않은 값: <b>근무성적</b>(근무성적 탭), 한국사능력검정 요건(기본 탭). 평정구분·평정기준일·근무성적·전망은 그대로 둡니다.</p>';
-  const overwrite = !readOnly && !ui.sample && ui.dirty ? '<p class="note imp-err">지금 입력해 둔 경력·연수·연구·가산점은 이 내용으로 바뀝니다.</p>' : '';
+  const overwrite = !readOnly && !ui.sample && ui.dirty ? '<p class="note imp-err">지금 입력해 둔 경력·연수·연구·가산점은 이 내용으로 바뀝니다(가상(예정)으로 표시한 항목은 그대로 둡니다).</p>' : '';
   showModal(`<h2>${readOnly ? '카드에서 읽은 내용' : '인사기록카드에서 읽었습니다'}</h2>
     ${readOnly ? '' : '<p class="note">아래 내용으로 경력·연수·연구·가산점을 채웁니다. 읽은 PDF는 어디에도 저장되지 않았습니다.</p>'}
     <div class="kvs">${rows}</div>${warns}${notIn}${overwrite}
@@ -164,10 +164,12 @@ function importApply() {
   if (P.profile.firstQualDate) state.profile.firstQualDate = P.profile.firstQualDate;
   if (P.career.length) state.career = P.career;
   if (P.training.qual) state.training.qual = Object.assign({}, state.training.qual, P.training.qual);
-  state.training.courses = P.training.courses;
-  state.training.contests = P.training.contests;
-  state.training.degrees = P.training.degrees;
-  state.bonus.periods = P.bonus.periods;
+  // 내가 넣어 둔 가상(예정) 항목은 카드를 다시 불러와도 그대로 남긴다
+  const vC = state.training.courses.filter(isV), vK = (state.training.contests || []).filter(isV), vD = (state.training.degrees || []).filter(isV), vP = state.bonus.periods.filter(isV);
+  state.training.courses = P.training.courses.concat(vC);
+  state.training.contests = P.training.contests.concat(vK);
+  state.training.degrees = P.training.degrees.concat(vD);
+  state.bonus.periods = P.bonus.periods.concat(vP);
   state.bonus.yearHours = P.bonus.yearHours;
   state.bonus.violence = P.bonus.violence.slice().sort();
   state = normalizeState(state);

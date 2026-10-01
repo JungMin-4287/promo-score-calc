@@ -140,6 +140,8 @@ function onPaste(e) {   // 시작일 칸에 "2015.03.01 ~ 2018.02.28"을 붙여�
 }
 
 /* ───────── 클릭 동작 ───────── */
+const ROWS_BOX = { 'training.courses': '#rows-courses', 'training.contests': '#rows-contests', 'training.degrees': '#rows-degrees', 'bonus.periods': '#rows-periods' };
+const rowsBoxOf = arr => $(ROWS_BOX[arr] || '#panel') || $('#panel');   // 새 행이 생긴 목록(그 칸 안에서 마지막 행)
 function focusLastRow(container) {
   const rows = $$('.rowc', container || document); const last = rows[rows.length - 1];
   const i = last && last.querySelector('input[type="text"]'); if (i) i.focus();
@@ -154,11 +156,20 @@ function resultText() {
   const K = kindCfg(), r = R;
   const L = (n, v, m, d = 3) => `${n.padEnd(10, '　')}${fx(v, d)} / ${m}`;
   const lines = [`승진점수 계산 — ${K.label} · 평정기준일 ${dshort(r.baseDate)}`,
-    r.total === null ? `근평을 뺀 합계 ${fx(r.sumWithoutPerf, 4)}` : `총점 ${fx(r.total, 4)} / ${fx(r.maxTotal, 2)}`, '',
+    r.total === null ? `근평을 뺀 합계 ${fx(r.sumWithoutPerf, 4)}` : `총점 ${fx(r.total, 4)} / ${fx(r.maxTotal, 2)}`,
+    ...(hasVirtual() ? [`(가상(예정) 항목 ${virtualTotal()}건 포함 · 가상을 뺀 확정 ${fx(R0.total === null ? R0.sumWithoutPerf : R0.total, 4)})`] : []), '',
     L('경력평정', r.career.total, 70), L('근무성적', r.perf.value, 100), L('자격연수', r.training.qual.points, 9), L('직무연수', r.training.duty, dutyMax())];
   if (isTeacher()) lines.push(L('연구실적', r.training.researchPoints, 3));
   lines.push(L('가산점 공통', r.bonus.common, 3.5), L('가산점 선택', r.bonus.select, 9.91), '', '참고용 계산(2026학년도 명부작성요령 기준)입니다.');
   return lines.join('\n');
+}
+
+/** 가상(예정) 행을 새로 만들 때 날짜 기본값을 평정기준일(올해)에 맞춰 채운다 */
+function virtualDefaults(t, tpl) {
+  const base = curBase(), y = thisYearSpan();
+  if (tpl === 'vcourse') { t.end = E.addDays(base, -14); t.start = E.addDays(t.end, -13); }
+  else if (tpl === 'vcontest' || tpl === 'vdegree') t.date = E.addDays(base, -30);
+  else if (tpl === 'vperiod') { t.start = y.start; t.end = y.end; t.label = `${y.label} 가상(예정)`; }
 }
 
 function onClick(e) {
@@ -167,7 +178,25 @@ function onClick(e) {
   switch (act) {
     case 'tab': ui.tab = b.dataset.tab; renderTabs(); updateTabFlags(); renderTab(); { const p = $('#panel'); const top = p.getBoundingClientRect().top + window.scrollY - 70; if (window.innerWidth <= 940 && window.scrollY > top) window.scrollTo({ top, behavior: 'auto' }); } break;
     case 'set-base': state.profile.baseDate = b.dataset.v; commit(true); break;
-    case 'add': { const arr = getPath(state, b.dataset.arr); arr.push(TPL[b.dataset.tpl]()); commit(true); focusLastRow($('#panel')); break; }
+    case 'add': { const arr = getPath(state, b.dataset.arr); arr.push(TPL[b.dataset.tpl]()); commit(true); focusLastRow(rowsBoxOf(b.dataset.arr)); break; }
+    case 'add-virtual': {
+      const arr = getPath(state, b.dataset.arr), t = TPL[b.dataset.tpl]();
+      virtualDefaults(t, b.dataset.tpl);
+      arr.push(t); commit(true); focusLastRow(rowsBoxOf(b.dataset.arr)); break;
+    }
+    case 'vchip': {   // 올해 카드에 아직 없는 항목을 가상으로 켜고 끄기
+      const cat = b.dataset.cat, y = thisYearSpan();
+      if (cat === 'violence') {
+        const set = new Set((state.bonus.vviolence || []).map(String));
+        if (set.has(y.key)) set.delete(y.key); else set.add(y.key);
+        state.bonus.vviolence = Array.from(set).sort();
+      } else {
+        const at = state.bonus.periods.findIndex(p => isV(p) && p.cat === cat && E.norm(p.start) === y.start && E.norm(p.end) === y.end);
+        if (at >= 0) state.bonus.periods.splice(at, 1);
+        else { const p = TPL.vperiod(cat); p.start = y.start; p.end = y.end; p.label = `${y.label} 가상(예정)`; state.bonus.periods.push(p); }
+      }
+      commit(true); break;
+    }
     case 'add-period': { state.bonus.periods.push(TPL.period(ui.pasteCat)); commit(true); focusLastRow($('#rows-periods')); break; }
     case 'del': { const arr = getPath(state, b.dataset.arr); arr.splice(+b.dataset.i, 1); commit(true); break; }
     case 'dup': {
@@ -214,12 +243,6 @@ function onClick(e) {
     case 'save-json': saveFile(`승진점수_입력값_${stamp()}.json`, exportJson()); break;
     case 'copy-result': copyText(resultText()); break;
     case 'open-import': importHome(); break;
-    case 'open-import-old':
-      showModal(`<h2>저장해 둔 입력값 불러오기</h2><p class="note">이 앱에서 <b>입력값 저장</b>으로 받은 .json 파일을 고르거나, 파일 내용을 아래에 붙여넣으세요. 지금 입력한 내용은 바뀝니다.</p>
-        <div class="grid"><div class="fl c12"><span class="lb">파일 선택</span><input type="file" id="import-file" accept=".json,application/json"></div>
-        <div class="fl c12"><span class="lb">또는 내용 붙여넣기</span><textarea id="import-text" placeholder='{"app":"promo-calc", ...}'></textarea></div></div>
-        <div class="btns"><button type="button" class="btn" data-act="modal-close">취소</button><button type="button" class="btn primary" data-act="import-go">불러오기</button></div>`);
-      break;
     case 'import-go': { const ta = $('#import-text'); const t = ta ? ta.value.trim() : ''; if (t) importJsonDone(t); else toast('내용을 붙여넣으세요'); break; }
     case 'import-apply': importApply(); break;
     case 'import-report': if (ui.cardImport) importReport(ui.cardImport, true); break;

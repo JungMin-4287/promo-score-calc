@@ -31,6 +31,10 @@ const drv = (type, idx, cls = 'info') => `<div class="${cls}" data-drv="${type}:
 const sec = (title, sum, inner, note) => `<section class="sec"><div class="sec-h"><h3>${title}</h3>${sum ? `<div class="sec-sum" ${sum}</div>` : ''}</div>${note ? `<p class="note">${note}</p>` : ''}${inner}</section>`;
 const sumSlot = id => `data-drv="${id}">`;   // sec() 에서 <div class="sec-sum" data-drv="..."> 로 열린다
 const addBtn = (label, act, extra = '') => `<button type="button" class="btn sm" data-act="${act}" ${extra}>＋ ${label}</button>`;
+/* 가상(예정) 항목: 추가 버튼·행 머리말·행 체크 */
+const vBtn = (label, arr, tpl) => `<button type="button" class="btn sm vbtn" data-act="add-virtual" data-arr="${arr}" data-tpl="${tpl}">＋ ${label}</button>`;
+const vHead = (r, what) => (isV(r) ? `<div class="vrow-h"><span class="vtag">가상(예정)</span><span class="muted">${what} 확정 점수에는 넣지 않고 “가상 포함” 점수에만 반영합니다.</span></div>` : '');
+const vCk = path => ck(path, '가상(예정)', { render: true });
 
 const GRADES = [['가', '가경력'], ['나', '나경력'], ['다', '다경력']];
 const RATES = [['1', '100%'], ['0.5', '50%']];
@@ -60,7 +64,7 @@ const HELP = {
       '<b>1급 정교사 자격 취득일</b>과 <b>한국사 요건</b>을 확인합니다. 한국사 요건은 점수가 아니라 명부에 오를 수 있는지를 정하는 조건입니다.',
     ],
     whereLabel: '저장',
-    where: '입력한 값은 이 브라우저에 자동 저장됩니다. 다른 기기에서도 쓰려면 위쪽 “입력값 저장”으로 파일을 받아 두었다가 “불러오기”로 여세요.',
+    where: '이 페이지는 입력한 값을 저장하지 않습니다. 새로 고치거나 닫으면 사라지니, 위쪽 “입력값 저장”으로 파일을 받아 두었다가 다음에 “카드(PDF) 불러오기”에서 그 파일(또는 인사기록카드 PDF)을 여세요.',
     read: '오른쪽(모바일은 아래) 채점표가 총점과 항목별 점수입니다. 탭 이름 옆 빨간 점은 확인할 것이 있다는 표시입니다.',
   },
   career: {
@@ -91,6 +95,7 @@ const HELP = {
       '<b>자격연수</b>: 1급 정교사 자격연수 성적과 만점을 넣습니다. 교감자격연수 후보자는 이 성적을 씁니다.',
       '<b>직무연수</b>: <b>60시간 이상</b> 과정만 추가합니다. 성적이 없으면 비워 두고, 방식(집합/원격)은 이수증으로 확인해 고르세요. 배지에서 인정 여부와 이유를 볼 수 있습니다.',
       '<b>연구대회</b>의 등급·연구자 수와 <b>학위</b>(석사·박사, 직무 관련 여부)를 넣습니다.',
+      '<b>가상 점수</b>: 아직 이수하지 않은 연수는 <b>＋ 가상(예정) 연수</b>로 넣고 예상 성적을 적으세요. 확정 점수와 따로 “가상 포함” 점수로 보여 줍니다. 연구대회·학위도 같은 방식입니다.',
     ],
     whereLabel: '카드에서 찾는 곳',
     where: '인사기록카드 <b>연수이수</b> 표(연수구분이 “자격연수”인 줄의 연수성적, 연수번호에 “원격”이 들어 있으면 원격), <b>연구실적</b> 표, <b>대학원에서의 학위취득</b> 표(직무연관성 칸)에서 옮깁니다.',
@@ -102,6 +107,7 @@ const HELP = {
       '<b>위쪽 표</b>: 해당 연도 직무연수 시간 합계를 넣습니다(자격연수 시간은 뺍니다). 학교폭력 예방·대응 실적이 있는 해는 체크합니다.',
       '<b>아래 목록</b>: 항목을 고르고 기간을 넣습니다. 카드 가산점 표의 한 줄이 한 행입니다. <b>+1년 복제</b>로 다음 해 행을 빨리 만들 수 있습니다.',
       '줄이 많으면 <b>여러 줄 붙여넣기</b>에 카드 표를 복사해 넣고 “행으로 추가”를 누르세요.',
+      '<b>올해 카드에 아직 없는 것</b>(부장·담임·농어촌·연구학교·학교폭력)은 목록 위의 버튼을 눌러 <b>가상</b>으로 켜 보세요. 확정 점수와 따로 “가상 포함” 점수로 보여 줍니다.',
     ],
     whereLabel: '카드에서 찾는 곳',
     where: '인사기록카드 <b>연수이수</b> 표의 연도별 맨 위 줄 “연도별연수시간누계”, <b>가산점</b> 표의 영역·연도·비고, 보직교사는 <b>임용발령사항</b>에서 임용구분이 “보직교사”인 기간입니다.',
@@ -112,7 +118,7 @@ const HELP = {
     steps: [
       '<b>계획을 계산에 반영</b>을 켭니다.',
       '학년도마다 보직교사·담임·근무학교 유형·연구학교·학교폭력 실적·연수 시간·예상 근무성적을 정합니다. 학년도는 <b>추가</b> 버튼으로 늘립니다.',
-      '새로 이수할 60시간 이상 직무연수가 있으면 <b>예정 직무연수</b>에 넣습니다(종료일이 평정기준일 이전이어야 반영됩니다).',
+      '새로 이수할 60시간 이상 직무연수와 올해 카드에 아직 없는 부장·담임은 <b>연수·연구</b>·<b>가산점</b> 탭에서 <b>가상(예정)</b>으로 넣으면 이 전망에도 함께 반영됩니다.',
     ],
     whereLabel: '보는 법',
     where: '아래 그래프와 표에서 해마다 어느 항목이 오르고(▲) 어느 항목이 줄어드는지 봅니다. 직무연수가 10년이 지나 빠지는 시점은 주황색 안내로 알려 줍니다.',
@@ -155,7 +161,7 @@ function renderGuide() {
   if (ui.tab !== 'basic') { el.innerHTML = ''; return; }
   const closed = ui.helpClosed && ui.helpClosed.guide;
   el.innerHTML = '<details class="guide" data-help="guide"' + (closed ? '' : ' open') + '><summary><h2>입력 순서</h2></summary>' +
-    '<p class="guide-lead">먼저 아래에서 평정구분과 평정기준일을 정한 뒤, 이 순서로 채우세요. 이름을 누르면 그 화면으로 갑니다.</p>' +
+    '<p class="guide-lead">먼저 아래에서 평정구분과 평정기준일을 정한 뒤, 이 순서로 채우세요. 이름을 누르면 그 화면으로 갑니다. 아직 확정되지 않은 연수·부장·담임이 궁금하면 연수·가산점 탭의 <b>가상(예정)</b>으로 넣어 가상 점수를 따로 볼 수 있습니다.</p>' +
     '<ol class="steps">' + GUIDE_STEPS.map((s, i) => '<li><span class="n">' + (i + 1) + '</span><div><button type="button" class="step-link" data-act="tab" data-tab="' + s[0] + '">' + s[1] + '</button>' + s[2] + '</div></li>').join('') + '</ol></details>';
 }
 
@@ -256,35 +262,41 @@ function tabPerf() {
 
 /* ───────── 탭 4: 연수·연구 ───────── */
 function courseRow(i) {
-  return `<div class="rowc" data-row="course:${i}">
+  const c = state.training.courses[i];
+  return `<div class="rowc${isV(c) ? ' virtual' : ''}" data-row="course:${i}">
+    ${vHead(c, '아직 이수하지 않은 연수입니다.')}
     ${fl('과정명', tx(`training.courses.${i}.label`, { ph: '직무연수 과정명' }), 'c4')}
     ${fl('시작일', dt(`training.courses.${i}.start`), 'c2')}
     ${fl('종료일', dt(`training.courses.${i}.end`), 'c2')}
     ${fl('시간', nm(`training.courses.${i}.hours`), 'c2')}
-    ${fl('성적(없으면 비움)', nm(`training.courses.${i}.score`, { ph: '예: 92' }), 'c2')}
+    ${fl(isV(c) ? '예상 성적(95점 초과면 6점)' : '성적(없으면 비움)', nm(`training.courses.${i}.score`, { ph: '예: 92' }), 'c2')}
     ${fl('방식', sl(`training.courses.${i}.mode`, [['집합', '집합(대면)'], ['원격', '원격(온라인)'], ['미확인', '확인 필요(원격으로 계산)']], { render: true }), 'c3')}
     ${drv('course', i)}
-    <div class="act"><button type="button" class="btn sm danger" data-act="del" data-arr="training.courses" data-i="${i}" aria-label="이 연수 삭제">삭제</button></div>
+    <div class="act">${vCk(`training.courses.${i}.virtual`)}<button type="button" class="btn sm danger" data-act="del" data-arr="training.courses" data-i="${i}" aria-label="이 연수 삭제">삭제</button></div>
   </div>`;
 }
 function contestRow(i) {
-  return `<div class="rowc" data-row="contest:${i}">
+  const c = state.training.contests[i];
+  return `<div class="rowc${isV(c) ? ' virtual' : ''}" data-row="contest:${i}">
+    ${vHead(c, '아직 입상하지 않은 실적입니다.')}
     ${fl('대회·실적명', tx(`training.contests.${i}.label`, { ph: '시·도 교육자료전 등' }), 'c4')}
     ${fl('입상일', dt(`training.contests.${i}.date`), 'c2')}
     ${fl('대회 규모·등급', sl(`training.contests.${i}.scale`, SCALES), 'c3')}
     ${fl('연구자 수', sl(`training.contests.${i}.authors`, AUTHORS, { kind: 'num' }), 'c3')}
     ${drv('contest', i)}
-    <div class="act"><button type="button" class="btn sm danger" data-act="del" data-arr="training.contests" data-i="${i}" aria-label="이 실적 삭제">삭제</button></div>
+    <div class="act">${vCk(`training.contests.${i}.virtual`)}<button type="button" class="btn sm danger" data-act="del" data-arr="training.contests" data-i="${i}" aria-label="이 실적 삭제">삭제</button></div>
   </div>`;
 }
 function degreeRow(i) {
-  return `<div class="rowc" data-row="degree:${i}">
+  const g = state.training.degrees[i];
+  return `<div class="rowc${isV(g) ? ' virtual' : ''}" data-row="degree:${i}">
+    ${vHead(g, '아직 취득하지 않은 학위입니다.')}
     ${fl('구분', sl(`training.degrees.${i}.level`, [['석사', '석사'], ['박사', '박사']]), 'c2')}
     ${fl('학위·기관', tx(`training.degrees.${i}.label`, { ph: '○○대 교육대학원' }), 'c4')}
     ${fl('취득일', dt(`training.degrees.${i}.date`), 'c3')}
     <div class="fl c3"><span class="lb">직무 관련</span>${ck(`training.degrees.${i}.related`, '직무와 관련 있음')}</div>
     ${drv('degree', i)}
-    <div class="act"><button type="button" class="btn sm danger" data-act="del" data-arr="training.degrees" data-i="${i}" aria-label="이 학위 삭제">삭제</button></div>
+    <div class="act">${vCk(`training.degrees.${i}.virtual`)}<button type="button" class="btn sm danger" data-act="del" data-arr="training.degrees" data-i="${i}" aria-label="이 학위 삭제">삭제</button></div>
   </div>`;
 }
 function tabTraining() {
@@ -304,17 +316,18 @@ function tabTraining() {
     </div>`,
     `이번 평정구분의 자격연수는 <b>${K.qualName === '중등1정교사자격' ? '1급 정교사 자격연수' : K.qualName === '중등교감자격' ? '교감 자격연수' : '교장 자격연수'}</b> 성적이고, 점수는 9 − (만점 − 성적) × ${K.qualK}입니다. 성적이 만점의 8할 미만이면 8할로 보고, 6할 미만이면 평정하지 않습니다.`)}
   ${sec('직무연수(60시간 이상 과정)', sumSlot('sum:duty'), `
-    <div class="rows" id="rows-courses">${T.courses.map((_, i) => courseRow(i)).join('') || '<div class="empty">60시간 이상 직무연수를 추가하세요. 60시간 미만 연수는 <b>가산점</b> 탭의 연도별 시간에 넣습니다.</div>'}</div>
-    <div>${addBtn('연수 과정', 'add', 'data-arr="training.courses" data-tpl="course"')}</div>`,
+    <div class="rows" id="rows-courses">${T.courses.map((_, i) => courseRow(i)).join('') || '<div class="empty">60시간 이상 직무연수를 추가하세요. 아직 이수하지 않은 연수는 <b>＋ 가상(예정) 연수</b>로 넣어 보세요. 60시간 미만 연수는 <b>가산점</b> 탭의 연도별 시간에 넣습니다.</div>'}</div>
+    <div class="addbar">${addBtn('연수 과정', 'add', 'data-arr="training.courses" data-tpl="course"')}${vBtn('가상(예정) 연수', 'training.courses', 'vcourse')}</div>`,
     `최근 10년(<b class="num">${dotd(win)}</b> 이후 종료) 안에 마친 <b>60시간 이상</b> 과정만 셉니다. 성적이 있는 과정 중 가장 높은 1건은 성적(6점 × 환산성적 ÷ 100), 그 밖의 과정은 건당 6점(이수실적)으로 최대 3건입니다.
-     <b>원격연수는 2021.1.1. 이후 시작한 과정만</b> 인정하고 그 이전 원격연수는 성적과 이수실적 모두 인정하지 않습니다(교사는 2024.3.31. 명부부터 원격 인정). 환산표: 95점 초과 100 · 90점 초과 95 · 85점 초과 90 · 85점 이하 85.`)}
+     <b>원격연수는 2021.1.1. 이후 시작한 과정만</b> 인정하고 그 이전 원격연수는 성적과 이수실적 모두 인정하지 않습니다(교사는 2024.3.31. 명부부터 원격 인정). 환산표: 95점 초과 100 · 90점 초과 95 · 85점 초과 90 · 85점 이하 85.
+     <b>가상(예정) 연수</b>는 아직 이수하지 않은 과정입니다. 종료일을 평정기준일 이전으로 두고 예상 성적을 적으면, 확정 점수와 따로 “가상 포함” 점수로 보여 줍니다.`)}
   ${teacher ? sec('연구대회 입상 실적', sumSlot('sum:contest'), `
     <div class="rows" id="rows-contests">${T.contests.map((_, i) => contestRow(i)).join('') || '<div class="empty">입상 실적이 있으면 추가하세요.</div>'}</div>
-    <div>${addBtn('입상 실적', 'add', 'data-arr="training.contests" data-tpl="contest"')}</div>`,
+    <div class="addbar">${addBtn('입상 실적', 'add', 'data-arr="training.contests" data-tpl="contest"')}${vBtn('가상(예정) 입상', 'training.contests', 'vcontest')}</div>`,
     '한 학년도에 1건(점수가 높은 것)만 인정합니다. 공동 연구는 2인 70%, 3인 50%, 4인 이상 30%. 학생 지도 공적으로 받은 표창은 연구실적이 아닙니다.') : ''}
   ${teacher ? sec('학위 취득 실적', sumSlot('sum:degree'), `
     <div class="rows" id="rows-degrees">${T.degrees.map((_, i) => degreeRow(i)).join('') || '<div class="empty">석사·박사 학위가 있으면 추가하세요.</div>'}</div>
-    <div>${addBtn('학위', 'add', 'data-arr="training.degrees" data-tpl="degree"')}</div>`,
+    <div class="addbar">${addBtn('학위', 'add', 'data-arr="training.degrees" data-tpl="degree"')}${vBtn('가상(예정) 학위', 'training.degrees', 'vdegree')}</div>`,
     '석사 직무관련 1.5점·기타 1.0점, 박사 직무관련 3점·기타 1.5점이며 하나만 인정합니다. 직무관련 여부는 인사기록카드의 “직무 연관성” 칸에 따르니, 교과와 관련된 학위인데 N으로 돼 있으면 학교 인사 담당자에게 정정을 요청하세요. 자격연수 성적으로 평정한 석사는 제외됩니다.') : ''}
   ${teacher ? sec('연구실적 합계', sumSlot('sum:research'), '') : ''}`;
 }
@@ -322,14 +335,33 @@ function tabTraining() {
 /* ───────── 탭 5: 가산점 ───────── */
 function periodRow(i) {
   const p = state.bonus.periods[i];
-  return `<div class="rowc" data-row="period:${i}">
+  return `<div class="rowc${isV(p) ? ' virtual' : ''}" data-row="period:${i}">
+    ${vHead(p, '아직 카드에 없는(예정) 기간입니다.')}
     ${fl('항목', sl(`bonus.periods.${i}.cat`, CAT_GROUPS, { render: true }), 'c4')}
     ${fl('소속·비고', tx(`bonus.periods.${i}.label`, { ph: '학교명 등' }), 'c3')}
     ${fl('시작일', dt(`bonus.periods.${i}.start`), 'c2')}
     ${fl('종료일', dt(`bonus.periods.${i}.end`), 'c2')}
     ${drv('period', i)}
-    <div class="act"><button type="button" class="btn sm" data-act="dup" data-arr="bonus.periods" data-i="${i}" title="같은 내용으로 다음 해 행을 만듭니다">+1년 복제</button><button type="button" class="btn sm danger" data-act="del" data-arr="bonus.periods" data-i="${i}" aria-label="이 행 삭제">삭제</button></div>
+    <div class="act">${vCk(`bonus.periods.${i}.virtual`)}<button type="button" class="btn sm" data-act="dup" data-arr="bonus.periods" data-i="${i}" title="같은 내용으로 다음 해 행을 만듭니다">+1년 복제</button><button type="button" class="btn sm danger" data-act="del" data-arr="bonus.periods" data-i="${i}" aria-label="이 행 삭제">삭제</button></div>
   </div>`;
+}
+/* 올해(평정기준일이 속한 학년도) 카드에 아직 없는 항목을 가상으로 켜고 끄는 버튼 */
+const VCHIPS = [['head', '부장교사(보직교사)'], ['homeroom', '담임교사'], ['rural', '농어촌학교'], ['special', '특수여건학교'], ['policy', '정책지원학교'], ['edu_research', '연구학교(교육부 지정)'], ['office_research', '연구학교(교육감 지정)'], ['violence', '학교폭력 실적']];
+function vChipState(cat) {   // 'real'(카드·입력에 이미 있음) · 'on'(가상으로 켬) · 'off'
+  const y = thisYearSpan();
+  if (cat === 'violence') {
+    if (state.bonus.violence.map(String).includes(y.key)) return 'real';
+    return (state.bonus.vviolence || []).map(String).includes(y.key) ? 'on' : 'off';
+  }
+  const covers = p => !isV(p) && p.cat === cat && E.norm(p.start) && E.norm(p.start) <= y.start && (!E.norm(p.end) || E.norm(p.end) >= y.end);
+  if (state.bonus.periods.some(covers)) return 'real';
+  return state.bonus.periods.some(p => isV(p) && p.cat === cat && E.norm(p.start) === y.start && E.norm(p.end) === y.end) ? 'on' : 'off';
+}
+function vChips() {
+  const y = thisYearSpan();
+  return `<div class="vbar"><div class="vbar-h"><span class="vtag">가상</span><b>${esc(y.label)}(${dshort(y.start)}~${dshort(y.end)}) 카드에 아직 없는 것</b></div>
+    <p class="note">해당하는 것을 눌러 켜 보세요. 확정 점수에는 넣지 않고 “가상 포함” 점수에만 반영하며, 다시 누르면 꺼집니다. 카드나 아래 목록에 이미 있는 항목은 ✓로 표시됩니다. 같은 기간에 겹치는 항목(예: 부장과 담임)은 점수가 높은 쪽만 인정되니, 가상으로 켜도 점수가 안 오르면 행의 배지에서 이유를 확인하세요.</p>
+    <div class="chips" role="group" aria-label="올해 가상 가산점">${VCHIPS.map(([cat, lab]) => { const st = vChipState(cat); return `<button type="button" class="chip" data-act="vchip" data-cat="${cat}" aria-pressed="${st === 'on'}"${st === 'real' ? ' disabled' : ''}>${st === 'real' ? '✓ ' : ''}${lab}${st === 'real' ? ' (이미 있음)' : ''}</button>`; }).join('')}</div></div>`;
 }
 function bonusYearRows() {
   const base = curBase();
@@ -346,7 +378,7 @@ function tabBonus() {
     <td>${E.periodLabel(k)}</td>
     <td><input type="text" inputmode="decimal" data-kind="num" data-path="bonus.yearHours.${k}" value="${esc(state.bonus.yearHours[k] == null ? '' : state.bonus.yearHours[k])}" placeholder="0" style="width:84px" aria-label="${E.periodLabel(k)} 연수 시간"></td>
     <td data-drv="yh:${k}"></td>
-    <td style="text-align:center"><label class="chk" style="min-height:0"><input type="checkbox" data-path="bonus.violence.${k}" data-kind="vio" ${state.bonus.violence.includes(k) ? 'checked' : ''} aria-label="${E.periodLabel(k)} 학교폭력 실적"></label></td>
+    <td style="text-align:center"><label class="chk" style="min-height:0"><input type="checkbox" data-path="bonus.violence.${k}" data-kind="vio" ${state.bonus.violence.includes(k) ? 'checked' : ''} aria-label="${E.periodLabel(k)} 학교폭력 실적"></label>${(state.bonus.vviolence || []).map(String).includes(k) && !state.bonus.violence.includes(k) ? ' <span class="vtag">가상</span>' : ''}</td>
   </tr>`).join('');
   const cerOpts = [['0', '없음'], ['0.5', '1급·기사 이상(0.50)'], ['0.25', '2·3급·기능사(0.25)']];
   return `<h2>가산점</h2>
@@ -356,8 +388,9 @@ function tabBonus() {
     <div class="tbl-wrap"><table class="t" id="tbl-year"><thead><tr><th>평정 기간</th><th>직무연수 시간 합계</th><th>학점(15시간=1)</th><th style="text-align:center">학교폭력 실적</th></tr></thead><tbody>${yrows}</tbody></table></div>`,
     '연수 시간은 인사기록카드 “연수이수” 표에서 해당 연도 맨 위 줄의 “연도별연수시간누계”를 입력하세요(자격연수·기타연수 시간은 빼고). 한 해 최대 4학점(0.08점), 합계 최대 50학점(1.00점)입니다. 연수성적에 쓴 60시간 이상 과정은 시간에서 자동으로 빼서 계산합니다.')}
   ${sec('기간으로 계산하는 가산점', sumSlot('sum:periods'), `
+    ${vChips()}
     <div class="rows" id="rows-periods">${state.bonus.periods.map((_, i) => periodRow(i)).join('') || '<div class="empty">보직교사·농어촌·담임·연구학교 기간을 추가하세요.</div>'}</div>
-    <div style="display:flex;flex-wrap:wrap;gap:8px">${addBtn('기간 추가', 'add-period')}<button type="button" class="btn sm ghost" data-act="sort-periods">항목·날짜순 정렬</button></div>
+    <div class="addbar">${addBtn('기간 추가', 'add-period')}${vBtn('가상(예정) 기간', 'bonus.periods', 'vperiod')}<button type="button" class="btn sm ghost" data-act="sort-periods">항목·날짜순 정렬</button></div>
     <details class="fold"><summary>여러 줄 붙여넣기 (가산점 표 등)</summary><div class="in">
       <p class="note">한 줄에 <b>2022.03.01 ~ 2023.02.28 농어촌(A중)</b>처럼 기간과 설명이 있으면 행으로 바꿉니다. 설명에 농어촌·특수여건·정책지원·담임·보직·연구시범(공통/선택)·청소년단체 같은 말이 있으면 항목을 맞추고, 없으면 아래에서 고른 항목으로 들어갑니다. “학교폭력” 줄은 연도별 학교폭력 실적에 체크됩니다.</p>
       <div class="grid"><div class="fl c6"><span class="lb">항목을 알 수 없을 때 넣을 항목</span><select id="paste-cat">${CAT_GROUPS.map(g => `<optgroup label="${esc(g.group)}">${g.items.map(([v, l]) => `<option value="${v}"${ui.pasteCat === v ? ' selected' : ''}>${esc(l)}</option>`).join('')}</optgroup>`).join('')}</select></div></div>
@@ -403,7 +436,7 @@ function projectionDates(b0) {
   return out.filter((d, i) => out.indexOf(d) === i);
 }
 function projection() {
-  const eff = E.applyPlan(state);
+  const eff = E.applyPlan(forCompute(state));
   return projectionDates(curBase()).map(d => ({ date: d, r: E.compute(eff, d) }));
 }
 function tabPlan() {
@@ -417,17 +450,8 @@ function tabPlan() {
     <div class="rows">${P.years.map((_, i) => planYearRow(i)).join('') || '<div class="empty">계획할 학년도를 추가하세요.</div>'}</div>
     <div style="display:flex;flex-wrap:wrap;gap:8px"><button type="button" class="btn sm" data-act="add-plan-year">＋ ${nextYear}학년도 추가</button></div>`,
     '계획 학년도에는 경력(가경력 근무)이 이어지는 것으로 보고, 체크한 항목을 그 해 전체(3.1.~2.말)에 적용합니다. 근무성적은 가정값이며, 비우면 입력해 둔 점수만으로 3개년을 고릅니다.')}
-  ${sec('예정 직무연수(60시간 이상)', '', `
-    <div class="rows">${P.courses.map((_, i) => `<div class="rowc" data-row="pcourse:${i}">
-      ${fl('과정명', tx(`plan.courses.${i}.label`, { ph: '예정 과정' }), 'c4')}
-      ${fl('시작일', dt(`plan.courses.${i}.start`), 'c2')}
-      ${fl('종료일', dt(`plan.courses.${i}.end`), 'c2')}
-      ${fl('시간', nm(`plan.courses.${i}.hours`), 'c2')}
-      ${fl('예상 성적', nm(`plan.courses.${i}.score`), 'c2')}
-      ${fl('방식', sl(`plan.courses.${i}.mode`, [['집합', '집합'], ['원격', '원격']]), 'c3')}
-      <div class="act"><button type="button" class="btn sm danger" data-act="del" data-arr="plan.courses" data-i="${i}">삭제</button></div>
-    </div>`).join('') || '<div class="empty">이수할 60시간 이상 직무연수가 있으면 추가하세요(종료일이 평정기준일 이전이어야 반영됩니다).</div>'}</div>
-    <div>${addBtn('예정 연수', 'add', 'data-arr="plan.courses" data-tpl="course"')}</div>`)}
+  ${sec('예정 연수 · 올해 가상 항목', '', `
+    <p class="note" style="margin:0">아직 이수하지 않은 직무연수와 올해 카드에 아직 없는 부장·담임은 <button type="button" class="step-link" data-act="tab" data-tab="training">연수·연구</button> 탭의 <b>＋ 가상(예정) 연수</b>, <button type="button" class="step-link" data-act="tab" data-tab="bonus">가산점</button> 탭의 <b>올해 카드에 아직 없는 것</b>에서 넣으세요. 넣은 가상 항목은 아래 전망에도 함께 반영됩니다.${hasVirtual() ? ` <b>지금 가상 항목 ${virtualTotal()}건이 포함되어 있습니다.</b>` : ''}</p>`)}
   ${sec('연도별 점수 전망', '', `<div id="plan-out"></div>`)}`;
 }
 

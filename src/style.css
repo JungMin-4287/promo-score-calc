@@ -321,3 +321,21 @@ progress { height: 10px; accent-color: var(--accent); }
 /* 맨 아래 안내 */
 .foot { margin: 22px 0 8px; padding-top: 12px; border-top: 1px solid var(--line); font-size: 12.5px; color: var(--ink-3); line-height: 1.6; }
 .foot p { margin: 0 0 4px; max-width: 90ch; }
+
+/* 가상(예정) 항목 */
+.vtag { display: inline-flex; align-items: center; background: var(--accent-soft); color: var(--accent); border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent); font-size: 11.5px; font-weight: 700; border-radius: 999px; padding: 1px 8px; letter-spacing: .01em; white-space: nowrap; }
+.rowc.virtual, .rowc.virtual:nth-child(even) { border-style: dashed; border-color: var(--accent); background: color-mix(in srgb, var(--accent-soft) 38%, var(--surface)); }
+.vrow-h { grid-column: span 12; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; font-size: 12.5px; }
+.addbar { display: flex; flex-wrap: wrap; gap: 8px; }
+.btn.vbtn { border-style: dashed; border-color: var(--accent); color: var(--accent); }
+.btn.vbtn:hover { background: var(--accent-soft); }
+.vbar { border: 1px dashed var(--accent); border-radius: 10px; padding: 10px 12px 12px; margin-bottom: 12px; background: color-mix(in srgb, var(--accent-soft) 32%, var(--surface)); }
+.vbar-h { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 14px; }
+.vbar .note { margin: 6px 0 8px; }
+.vbar .chip[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); font-weight: 600; }
+.chip:disabled { opacity: .7; cursor: default; border-style: dashed; }
+.vsum { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; margin-top: 8px; padding: 7px 10px; border-radius: 8px; background: var(--accent-soft); font-size: 13.5px; font-variant-numeric: tabular-nums; }
+.vsum .plus { color: var(--ink-3); }
+.vdelta { font-size: 11.5px; font-weight: 700; color: var(--accent); margin-right: 8px; }
+.meter { display: flex; }
+.meter i.v { background: repeating-linear-gradient(135deg, var(--accent) 0 3px, color-mix(in srgb, var(--accent) 30%, transparent) 3px 6px); border-radius: 0 4px 4px 0; }
