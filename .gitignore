@@ -1,0 +1,4 @@
+node_modules/
+*.pdf
+*_입력값_*.json
+승진점수_입력값_*.json

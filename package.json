@@ -1,0 +1,11 @@
+{
+  "name": "promo-score-calc",
+  "version": "1.0.0",
+  "private": true,
+  "description": "교감 자격연수·승진 후보자 서열점수 계산기(울산 명부작성요령 기준)",
+  "scripts": {
+    "build": "node build.js",
+    "test": "node test/card_map_synth.js"
+  },
+  "license": "MIT"
+}
