@@ -2645,11 +2645,11 @@ async function readCardPages(file, onProgress) {
 }
 
 function friendlyError(err) {
-  const n = (err && (err.name || err.code)) || '';
+  const n = (err && err.name) || '', c = err && err.code;
   if (/Password/.test(n)) return '암호가 걸린 PDF입니다. 암호를 풀어 저장한 파일로 다시 시도하세요.';
   if (/InvalidPDF|MissingPDF/.test(n)) return 'PDF 파일이 손상되었거나 PDF가 아닙니다.';
-  if (n === 'lib') return 'PDF를 읽는 도구를 불러오지 못했습니다. 페이지를 새로 고친 뒤 다시 시도하세요.';
-  if (n === 'empty') return '이 PDF에서 인사기록카드 표(연수이수·가산점·임용발령사항)를 찾지 못했습니다. NEIS ‘인사기록카드 출력’에서 ‘인사카드(전체)’로 저장한 PDF인지 확인하세요.';
+  if (c === 'lib') return 'PDF를 읽는 도구를 불러오지 못했습니다. 페이지를 새로 고친 뒤 다시 시도하세요.';
+  if (c === 'empty') return '이 PDF에서 인사기록카드 표(연수이수·가산점·임용발령사항)를 찾지 못했습니다. NEIS ‘인사기록카드 출력’에서 ‘인사카드(전체)’로 저장한 PDF인지 확인하세요.';
   return 'PDF를 읽는 중 문제가 생겼습니다. NEIS에서 다시 저장한 PDF로 시도해 보세요.';
 }
 
