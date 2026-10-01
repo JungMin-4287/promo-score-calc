@@ -92,6 +92,23 @@
   };
   const MAX = { career: 70, perf: 100, qual: 9, duty: 18, dutyVice: 6, research: 3, bonusCommon: 3.5, bonusSelect: 9.91 };
 
+  /* 국가기술자격증(선택가산점) — 명부작성요령 선택가산점 8)과 평정프로그램 '국가기술 자격증 소지 교사(가장 유리한 자격증 1개만 기입)'.
+   * 0.50점: 기술사·기능장·기사·산업기사·서비스분야 1급 / 0.25점: 기능사·서비스분야 2·3급. 합산하지 않고 가장 유리한 1개만(상한 0.50).
+   * 정보화 관련 자격증(국가기술자격법 시행령의 정보 분야 + 서비스 분야의 워드프로세서·컴퓨터활용능력)은 담당 과목·근무교 계열·학교급과 관계없이 인정하고,
+   * 그 밖의 자격은 담당 과목과 관련되고 그 과목을 직접 가르친 경우에만 인정한다(특성화·특목고 등). 직무연수 학점으로 쓴 자격은 제외.
+   * 문서실무사는 2016.3.1.~2019.6.25. 취득분만 인정. 교감·교장 평정은 해당 직위(또는 전직 전 직위)에서 취득한 자격만. */
+  const CERTS = {
+    cpu1: { label: '컴퓨터활용능력 1급', pts: 0.5, it: true },
+    cpu2: { label: '컴퓨터활용능력 2급', pts: 0.25, it: true },
+    wp1: { label: '워드프로세서 1급', pts: 0.5, it: true },
+    wp2: { label: '워드프로세서 2급', pts: 0.25, it: true },
+    it50: { label: '정보 분야 기술사·기사·산업기사(정보처리기사 등)', pts: 0.5, it: true },
+    it25: { label: '정보 분야 기능사·서비스 3급(정보처리기능사·워드프로세서 3급 등)', pts: 0.25, it: true },
+    g50: { label: '그 밖의 기술사·기능장·기사·산업기사·서비스분야 1급', pts: 0.5, it: false },
+    g25: { label: '그 밖의 기능사·서비스분야 2·3급', pts: 0.25, it: false },
+  };
+  const DOC_WINDOW = ['2016-03-01', '2019-06-25'];
+
   const CAREER_TABLE = {
     basic: { 가: { max: 64, m: 0.3555, d: 0.0118 }, 나: { max: 60, m: 0.3333, d: 0.0111 }, 다: { max: 56, m: 0.3111, d: 0.0103 } },
     over: { 가: { max: 6, m: 0.1, d: 0.0033 }, 나: { max: 5, m: 0.0833, d: 0.0027 }, 다: { max: 4, m: 0.0666, d: 0.0022 } },
@@ -443,6 +460,27 @@
   }
   function segPoints(s, e, rate) { const { months, days } = bonusMD(s, e); return { months, days, pts: months * rate.m + days * rate.d }; }
 
+  /** 국가기술자격증: 가장 유리한 1개만(상한 0.50). rows[i] 는 B.certs[i] 의 결과 — status: ok(반영) | dup(더 유리한 1개만 인정) | credited(학점화) | future(평정기준일 이후 취득) | window(문서실무사 기간 밖) | type(종류 미선택) */
+  function certScore(B, baseDate, kindKey) {
+    const list = Array.isArray(B.certs) ? B.certs : [];
+    const rows = list.map(c => {
+      const spec = c && CERTS[c.type], d = norm(c && c.date);
+      const r = { status: 'ok', points: 0, spec: spec || null, key: c && c.type };
+      if (!spec) { r.status = 'type'; return r; }
+      if (c.credited) { r.status = 'credited'; return r; }
+      if (d && d > baseDate) { r.status = 'future'; return r; }
+      if (/문서실무/.test(String(c.name || '')) && !(d && d >= DOC_WINDOW[0] && d <= DOC_WINDOW[1])) { r.status = 'window'; return r; }
+      r.points = spec.pts;
+      return r;
+    });
+    let chosen = -1;
+    rows.forEach((r, i) => { if (r.status === 'ok' && (chosen < 0 || r.points > rows[chosen].points)) chosen = i; });
+    rows.forEach((r, i) => { if (r.status === 'ok' && i !== chosen) r.status = 'dup'; });
+    const legacy = Math.max(0, +B.cert || 0);      // 예전 저장 파일(점수만 고르던 칸)·평정프로그램 대조용 직접 점수
+    const best = chosen >= 0 ? rows[chosen].points : 0;
+    return { points: Math.min(Math.max(best, legacy), 0.5), rows, chosen, vice: !!(KINDS[kindKey] && KINDS[kindKey].pos === 'vice') };
+  }
+
   function bonusScore(state, baseDate, training) {
     const B = state.bonus || {};
     const kind = KINDS[state.profile.kind];
@@ -591,12 +629,15 @@
     const nat = Math.min(+B.national || 0, 0.1);
     const eduDevRaw = Math.min(S('homeroom'), 0.5) + Math.min(S('youth'), 0.5) + Math.min(S('excellent'), 0.5) + nat;
     const eduDev = Math.min(eduDevRaw, 0.5);
-    const cert = Math.min(+B.cert || 0, 0.5);
+    const certRes = certScore(B, baseDate, state.profile && state.profile.kind);
+    const cert = certRes.points;
     const other = Math.max(0, +B.other || 0);
     const select = headSpec + island + ruralSum + sped + circuit + eduDev + headOverPts + cert + other;
 
     if (S('edu_research') > 1.0 + 1e-9) notes.push('교육부 지정 연구·시범학교(공통) 상한 1.00점에 이미 도달해 추가 경력은 점수가 늘지 않습니다.');
     if (headOverPts > 0 || ho.used >= HEAD_CAP_DAYS) notes.push('보직교사 경력이 상한(1.75점=83개월 10일)을 넘어 초과분은 월 0.003점(상한 0.40점)으로 계산됩니다.');
+    if (certRes.chosen >= 0 && certRes.vice) notes.push('국가기술자격증은 교감 직위(또는 전직 전 직위)에서 취득한 것만 평정합니다. 교감 임용 이후 취득한 자격인지 확인하세요.');
+    if (certRes.chosen >= 0 && certRes.rows[certRes.chosen].spec && !certRes.rows[certRes.chosen].spec.it) notes.push('정보화 관련이 아닌 국가기술자격증은 담당 과목과 관련되고 그 과목을 직접 가르친 경우에만 인정됩니다.');
     return {
       common: rnd(common, 4), select: rnd(select, 4), total: rnd(common + select, 4),
       parts: {
@@ -611,7 +652,7 @@
         sped: { points: sped, cap: 0.75 },
         circuit: { points: circuit, cap: 1.0 },
         eduDev: { points: eduDev, cap: 0.5, homeroom: Math.min(S('homeroom'), 0.5), youth: Math.min(S('youth'), 0.5), excellent: Math.min(S('excellent'), 0.5), national: nat, raw: eduDevRaw, dm: { homeroom: dmOf('homeroom'), youth: dmOf('youth'), excellent: dmOf('excellent') } },
-        cert: { points: cert, cap: 0.5 },
+        cert: { points: cert, cap: 0.5, rows: certRes.rows, chosen: certRes.chosen },
         other: { points: other },
       },
       segDetail, rowInfo, warnings, notes,
@@ -661,7 +702,7 @@
   /** 전망(예상) 입력을 실제 기록 위에 얹은 상태를 만든다. 실제 기록(state)은 건드리지 않는다.
    *  plan.years  : [{year(학년도 시작 연도), career(false면 근무 경력을 더하지 않음 — 올해 칸), head, homeroom, school:'rural'|'special'|'policy'|'none',
    *                  research:'none'|'edu'|'office', violence, hours(추가 연수 시간)}]
-   *  plan.courses/contests/degrees/periods : 예정 직무연수·연구대회·학위·가산점 기간(실제 행과 같은 모양)
+   *  plan.courses/contests/degrees/periods/certs : 예정 직무연수·연구대회·학위·가산점 기간·국가기술자격증(실제 행과 같은 모양)
    *  plan.perf   : { 학년도: 근무성적 합산점(가정) } — 실제 입력이 있어도 이 값이 우선
    *  plan.perfFill : 비어 있는 학년도를 이 점수로 가정
    *  예정 항목은 실제 행들 뒤에 같은 순서로 붙이므로, 화면에서 (실제 행 수 + 순번)으로 결과를 찾을 수 있다. */
@@ -674,7 +715,7 @@
     const okNum = v => v !== undefined && v !== null && v !== '' && !isNaN(+v);
     const fill = okNum(plan.perfFill) ? +plan.perfFill : null;
     if (!years.length && !list('courses').length && !list('contests').length && !list('degrees').length && !list('periods').length
-      && !Object.keys(perfMap).some(k => okNum(perfMap[k])) && fill === null) return state;
+      && !list('certs').length && !Object.keys(perfMap).some(k => okNum(perfMap[k])) && fill === null) return state;
     const s = JSON.parse(JSON.stringify(state));
     s.career = (s.career || []).filter(r => !r.plan);
     // 지금 근무 중(종료일을 비운) 경력이 있으면 어느 평정기준일에서도 이어서 계산되므로, 학년도 칸마다 경력 행을 따로 더하지 않는다
@@ -693,6 +734,8 @@
     for (const c of list('contests')) s.training.contests.push({ ...c, plan: true });
     for (const g of list('degrees')) s.training.degrees.push({ ...g, plan: true });
     for (const p of list('periods')) s.bonus.periods.push({ ...p, plan: true });
+    s.bonus.certs = (s.bonus.certs || []).filter(c => !c.plan);
+    for (const c of list('certs')) s.bonus.certs.push({ ...c, plan: true });
     for (const y of years) {
       const yr = +y.year, st = `${yr}-03-01`, en = schoolYearEnd(yr);
       if (y.career !== false && !working) s.career.push({ start: st, end: en, grade: plan.careerGrade || '가', rate: 1, label: `${yr}학년도(계획)`, plan: true });
@@ -720,13 +763,13 @@
       career: [{ label: '', start: '', end: '', grade: '가', rate: 1 }],
       perf: {},
       training: { qual: { name: '중등1정교사자격', label: '', start: '', end: '', score: '', full: 100 }, courses: [], contests: [], degrees: [] },
-      bonus: { periods: [], yearHours: {}, violence: [], cert: 0, national: 0, other: 0 },
-      plan: { years: [], courses: [], contests: [], degrees: [], periods: [], perf: {}, perfFill: '', target: '', careerGrade: '가' },
+      bonus: { periods: [], yearHours: {}, violence: [], certs: [], cert: 0, national: 0, other: 0 },
+      plan: { years: [], courses: [], contests: [], degrees: [], periods: [], certs: [], perf: {}, perfFill: '', target: '', careerGrade: '가' },
     };
   }
 
   return {
-    KINDS, MAX, CATS, CAT_ORDER, CONTEST, DEGREE, CAREER_TABLE,
+    KINDS, MAX, CATS, CAT_ORDER, CONTEST, DEGREE, CAREER_TABLE, CERTS,
     norm, diffMD, mdText, addDays, addMonths, addYears, rnd, daysBetween, periodKey, periodStart, periodEnd, periodLabel, schoolYearEnd, dutyWindowStart,
     careerScore, perfScore, trainingScore, bonusScore, eligibility, compute, applyPlan, defaultState, periodKeys,
     _internal: { conflicts, subtract, mergeRanges, splitAtDates },

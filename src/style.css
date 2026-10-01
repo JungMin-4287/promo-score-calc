@@ -354,6 +354,15 @@ progress { height: 10px; accent-color: var(--accent); }
   .rowc.prow .rt { display: inline; }
 }
 
+/* 자격증 행: 자격증 종류 칸을 넓게(한 줄 모양은 가산점 기간 행과 같다) */
+@container panel (min-width: 720px) {
+  .rowc.crow, .crow-head { grid-template-columns: 240px minmax(60px, 1fr) 92px 82px 124px 54px; }
+}
+@container panel (min-width: 860px) {
+  .rowc.crow, .crow-head { grid-template-columns: 262px minmax(100px, 1fr) 100px 90px 180px 60px; }
+}
+.rowc.crow .chk { min-height: 32px; white-space: nowrap; font-size: 13px; }
+
 /* 중간 너비(480~699px)에서는 작은 칸을 한 줄에 셋씩 */
 @container panel (min-width: 480px) and (max-width: 699px) {
   .rowc .fl.c1, .rowc .fl.c2, .rowc .fl.c3 { grid-column: span 4; }

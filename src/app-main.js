@@ -140,7 +140,7 @@ function onPaste(e) {   // 시작일 칸에 "2015.03.01 ~ 2018.02.28"을 붙여�
 }
 
 /* ───────── 클릭 동작 ───────── */
-const ROWS_BOX = { 'training.courses': '#rows-courses', 'training.contests': '#rows-contests', 'training.degrees': '#rows-degrees', 'bonus.periods': '#rows-periods', 'plan.courses': '#rows-pcourses', 'plan.contests': '#rows-pcontests', 'plan.degrees': '#rows-pdegrees', 'plan.periods': '#rows-pperiods' };
+const ROWS_BOX = { 'training.courses': '#rows-courses', 'training.contests': '#rows-contests', 'training.degrees': '#rows-degrees', 'bonus.periods': '#rows-periods', 'bonus.certs': '#rows-certs', 'plan.certs': '#rows-pcerts', 'plan.courses': '#rows-pcourses', 'plan.contests': '#rows-pcontests', 'plan.degrees': '#rows-pdegrees', 'plan.periods': '#rows-pperiods' };
 const rowsBoxOf = arr => $(ROWS_BOX[arr] || '#panel') || $('#panel');   // 새 행이 생긴 목록(그 칸 안에서 마지막 행)
 function focusFirstRow(container) {   // 목록 맨 위 행의 첫 글자 칸(소속·비고)
   const first = $$('.rowc', container || document)[0];
@@ -172,7 +172,7 @@ function resultText() {
 function planDefaults(t, tpl) {
   const base = curBase(), y = thisYearSpan();
   if (tpl === 'pcourse') { t.end = E.addDays(base, -14); t.start = E.addDays(t.end, -13); }
-  else if (tpl === 'pcontest' || tpl === 'pdegree') t.date = E.addDays(base, -30);
+  else if (tpl === 'pcontest' || tpl === 'pdegree' || tpl === 'pcert') t.date = E.addDays(base, -30);
   else if (tpl === 'pperiod') { t.start = y.start; t.end = y.end; }
 }
 

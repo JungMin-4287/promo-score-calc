@@ -237,6 +237,7 @@
       const cardMax = periods.filter(p => p.cat !== 'head').reduce((m, p) => (pKey(p.start) > m ? pKey(p.start) : m), '0000');
       if (cardMax !== '0000' && cardMax < want) warn.push('카드의 가산점은 ' + (E ? E.periodLabel(cardMax) : cardMax) + '까지입니다. 평정기준일이 속한 ' + (E ? E.periodLabel(want) : want) + ' 분(담임·농어촌·연구학교·학교폭력 실적 등)은 카드에 아직 올라오지 않았을 수 있으니 가산점 탭에서 해당하면 직접 추가하세요.');
     }
+    warn.push('국가기술자격증(컴퓨터활용능력·워드프로세서 등)은 카드에서 읽어 오지 않습니다. 카드 “자격취득” 표에 있으면 가산점 탭의 “국가기술자격증”에 직접 넣으세요.');
     return { patch, info, warn, meta, stats: { training: trs.length, duty: duty.length, long: long.length, bonusRows: bp.rows.length, unclassified: unclassified.length, sections: { training: tp.section, bonus: bp.section, career: cp.section } } };
   }
 

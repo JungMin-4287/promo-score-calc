@@ -16,6 +16,17 @@ function periodResultHtml(p, info) {
     return `${badge('bad', '인정 안 됨', '같은 기간에 월 평정점이 더 높은 항목이 있거나 인정 기간 밖입니다')} <span class="muted xs">겹침·기간 밖</span>`;
 }
 
+/** 자격증 행 옆 결과 — r: 엔진의 certScore rows[i], when: 날짜 기준 안내문 */
+function certResultHtml(r, afterText) {
+  if (!r) return '';
+  if (r.status === 'type') return '<span class="muted">자격증 종류를 고르세요</span>';
+  if (r.status === 'credited') return `${badge('info', '학점으로 쓴 자격 — 제외', '직무연수 학점으로 인정받은 자격증은 선택가산점에서 빠집니다')}`;
+  if (r.status === 'future') return badge('info', afterText, '취득일이 평정기준일 이후라 그날 명부에는 반영되지 않습니다');
+  if (r.status === 'window') return badge('bad', '문서실무사는 2016.3.1.~2019.6.25. 취득분만 인정', '이름에 문서실무사가 들어 있어 취득일이 그 기간 안이어야 합니다');
+  if (r.status === 'dup') return `${badge('warn', '1개만 인정', '선택가산점은 가장 유리한 자격증 1개만 점수가 됩니다. 더 유리하거나 같은 점수의 자격이 이미 반영되었습니다')} <span class="muted xs">${fx(r.points, 2)}점이지만 다른 자격이 반영됨</span>`;
+  return `${badge('ok', `${fx(r.points, 2)}점 반영`, '가장 유리한 자격증 1개')}${r.spec && !r.spec.it ? ' ' + badge('warn', '담당 과목 관련만', '정보화 관련이 아닌 자격은 담당 과목과 관련되고 그 과목을 직접 가르친 경우에만 인정됩니다') : ''}`;
+}
+
 const DRV = {
   career(i) {
     const r = state.career[i]; if (!r) return '';
@@ -91,11 +102,14 @@ const DRV = {
   'sum:degree'() { const d = R.training.research.degree; return d ? `학위 <b>${fx(d.points)}점</b>` : '학위 <b>0점</b>'; },
   'sum:research'() { const r = R.training.research; return `연구실적 <b>${fx(R.training.researchPoints)}점</b> / 3 <span class="muted">(연구대회 ${fx(r.contestSum, 2)} + 학위 ${fx(r.degree ? r.degree.points : 0, 2)}, 상한 3점)</span>`; },
   'sum:yearly'() { const b = R.bonus.parts; return `직무연수 <b>${fx(b.trainBonus.points)}점</b>(${b.trainBonus.creditSum}학점) · 학교폭력 <b>${fx(b.violence.points)}점</b>(${b.violence.count}회)`; },
+  'sum:cert'() { const c = R.bonus.parts.cert, row = c.chosen >= 0 ? c.rows[c.chosen] : null; return `국가기술자격증 <b>${fx(c.points)}점</b> / 0.50${row && row.spec ? ` <span class="muted">· ${esc(CERT_SHORT[row.key] || row.spec.label)}</span>` : ''}`; },
   'sum:periods'() { const b = R.bonus.parts; const v = R.bonus.total - b.trainBonus.points - b.violence.points - b.cert.points - b.other.points; return `기간으로 계산한 가산점 <b>${fx(v)}점</b>`; },
 };
 
 /* 전망 입력 행 옆의 결과 — 예상(F) 계산에서 같은 행을 찾는다(예정 항목은 실제 행 뒤에 같은 순서로 붙는다) */
 Object.assign(DRV, {
+  cert(i) { const c = R.bonus.parts.cert; return certResultHtml(c.rows[i], `평정기준일(${dshort(R.baseDate)}) 이후 취득 — 그다음 해 명부부터 반영`); },
+  pcert(i) { const c = F && F.bonus.parts.cert; return c ? certResultHtml(c.rows[state.bonus.certs.length + i], `예상 평정기준일(${dshort(forecastDate())}) 이후 취득 — 그다음 해 명부부터 반영`) : ''; },
   pcourse(i) {
     const c = F && F.training.courses[state.training.courses.length + i]; if (!c) return '';
     const slot = F.training.slots.find(s => s.course === c);

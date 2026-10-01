@@ -101,9 +101,10 @@ const HELP = {
       '<b>위쪽 표</b>: 해당 연도 직무연수 시간 합계를 넣습니다(자격연수 시간은 뺍니다). 학교폭력 예방·대응 실적이 있는 해는 체크합니다.',
       '<b>아래 목록</b>: 항목을 고르고 기간을 넣습니다. 카드 가산점 표의 한 줄이 한 행입니다. <b>+1년 복제</b>로 다음 해 행을 빨리 만들 수 있습니다.',
       '줄이 많으면 <b>여러 줄 붙여넣기</b>에 카드 표를 복사해 넣고 “행으로 추가”를 누르세요.',
+      '<b>국가기술자격증</b>(컴퓨터활용능력·워드프로세서·정보처리기사 등)이 있으면 그 구역에서 종류와 취득일을 넣습니다. 가장 유리한 1개만 최대 0.50점입니다.',
     ],
     whereLabel: '카드에서 찾는 곳',
-    where: '인사기록카드 <b>연수이수</b> 표의 연도별 맨 위 줄 “연도별연수시간누계”, <b>가산점</b> 표의 영역·연도·비고, 보직교사는 <b>임용발령사항</b>에서 임용구분이 “보직교사”인 기간입니다.',
+    where: '인사기록카드 <b>연수이수</b> 표의 연도별 맨 위 줄 “연도별연수시간누계”, <b>가산점</b> 표의 영역·연도·비고, 보직교사는 <b>임용발령사항</b>에서 임용구분이 “보직교사”인 기간, 자격증은 <b>자격취득</b> 표입니다(이 계산기는 자격취득 표를 읽어 오지 않으니 직접 넣으세요).',
     read: '행마다 “인정 / 일부 인정 / 인정되지 않음” 배지가 붙습니다. 같은 기간에 겹치는 항목(예: 보직교사와 담임)은 점수가 높은 쪽만 인정됩니다. 아래 요약 표의 “상한” 배지는 더 늘려도 점수가 오르지 않는다는 뜻입니다.',
   },
   plan: {
@@ -111,7 +112,7 @@ const HELP = {
     steps: [
       '<b>학년도별 예상</b>에서 올해(평정기준일이 속한 학년도)와 앞으로 학년도에 할 수 있는 것을 정합니다: 보직교사·담임·근무학교 유형·연구학교·학교폭력 실적·추가 연수 시간. 카드에 이미 있는 항목은 ✓로 표시됩니다.',
       '<b>근무성적 예상</b>에 아직 모르는 학년도(올해 등)나 앞으로의 점수를 가정해 적습니다.',
-      '이수할 60시간 이상 직무연수는 <b>예정 직무연수</b>에, 연구대회 입상·학위 취득 계획은 <b>예정 입상·학위</b>에 넣습니다.',
+      '이수할 60시간 이상 직무연수는 <b>예정 직무연수</b>에, 연구대회 입상·학위 취득 계획은 <b>예정 입상·학위</b>에, 딸 계획인 컴퓨터활용능력 같은 자격증은 <b>예정 자격증</b>에 넣습니다.',
       '<b>예상 평정기준일</b>을 앞으로 4~5년 뒤로 옮기면 그날 명부 기준 예상을 봅니다. 그 해까지 학년도 칸이 필요하니 <b>학년도 칸 채우기</b>로 비어 있는 해를 만들고 해마다 고칩니다.',
       '맨 위 <b>예상 요약</b>에서 카드 기준 점수와 예상 점수를 비교하고, 맨 아래 표·그래프에서 해마다 변화를 봅니다.',
     ],
@@ -346,6 +347,29 @@ function prowHtml(arr, i, p, drvType, dupBtn) {
 }
 function periodRow(i) { return prowHtml('bonus.periods', i, state.bonus.periods[i], 'period'); }
 
+/* 국가기술자격증(컴퓨터활용능력 등) — 가산점 탭(가지고 있는 것)과 전망 탭(딸 예정인 것)이 같은 한 줄 행을 쓴다 */
+const CERT_GROUPS = [
+  { group: '정보화 관련 — 담당 과목·학교급과 관계없이 인정', keys: ['cpu1', 'cpu2', 'wp1', 'wp2', 'it50', 'it25'] },
+  { group: '그 밖의 국가기술자격 — 담당 과목과 관련될 때만 인정', keys: ['g50', 'g25'] },
+];
+const CERT_SHORT = { cpu1: '컴퓨터활용능력 1급', cpu2: '컴퓨터활용능력 2급', wp1: '워드프로세서 1급', wp2: '워드프로세서 2급', it50: '정보처리기사 등(기사급)', it25: '정보처리기능사 등', g50: '그 밖의 1급·기사급', g25: '그 밖의 2·3급·기능사' };
+const certLabel = k => (E.CERTS[k] ? E.CERTS[k].label : '');
+const CROW_HEAD = '<div class="prow-head crow-head" aria-hidden="true"><span>자격증</span><span>이름·메모</span><span>취득일</span><span>학점화</span><span>인정 결과</span><span class="r">삭제</span></div>';
+function crowHtml(arr, i, p, drvType) {
+  const path = `${arr}.${i}`;
+  const opts = CERT_GROUPS.map(g => `<optgroup label="${esc(g.group)}">${g.keys.map(k => `<option value="${k}" title="${esc(certLabel(k))}"${p.type === k ? ' selected' : ''}>${esc(CERT_SHORT[k])} · ${E.CERTS[k].pts.toFixed(2)}</option>`).join('')}</optgroup>`).join('');
+  return `<div class="rowc prow crow" data-row="${drvType}:${i}">
+    <label class="fl pc-cat"><span class="lb">자격증</span><select data-path="${path}.type" data-render="1" title="${esc(certLabel(p.type))}">${opts}</select></label>
+    <label class="fl pc-note"><span class="lb">이름·메모</span>${tx(`${path}.name`, { ph: '자격증 이름' })}</label>
+    <label class="fl pc-start"><span class="lb">취득일</span>${dt(`${path}.date`, { ph: '취득일' })}</label>
+    <div class="fl pc-end"><span class="lb">학점화</span><label class="chk" title="카드 ‘자격취득’ 표의 평정학점이 0보다 크면 체크하세요. 직무연수 학점으로 이미 쓴 자격은 선택가산점에서 빠집니다"><input type="checkbox" data-path="${path}.credited"${p.credited ? ' checked' : ''}> 학점화함</label></div>
+    <div class="info pc-res" data-drv="${drvType}:${i}"></div>
+    <div class="act pc-act"><button type="button" class="btn sm danger" data-act="del" data-arr="${arr}" data-i="${i}" aria-label="이 자격증 삭제">삭제</button></div>
+  </div>`;
+}
+function certRow(i) { return crowHtml('bonus.certs', i, state.bonus.certs[i], 'cert'); }
+function pcertRow(i) { return crowHtml('plan.certs', i, state.plan.certs[i], 'pcert'); }
+
 function bonusYearRows() {
   const base = curBase();
   const firstCareer = state.career.filter(r => !r.mil && E.norm(r.start)).map(r => E.norm(r.start)).sort()[0];
@@ -363,9 +387,8 @@ function tabBonus() {
     <td data-drv="yh:${k}"></td>
     <td style="text-align:center"><label class="chk" style="min-height:0"><input type="checkbox" data-path="bonus.violence.${k}" data-kind="vio" ${state.bonus.violence.includes(k) ? 'checked' : ''} aria-label="${E.periodLabel(k)} 학교폭력 실적"></label></td>
   </tr>`).join('');
-  const cerOpts = [['0', '없음'], ['0.5', '1급·기사 이상(0.50)'], ['0.25', '2·3급·기능사(0.25)']];
   return `<h2>가산점</h2>
-  <p class="lead">공통가산점(직무연수 이수실적·학교폭력 실적·교육부 연구학교·재외국민교육기관 파견)과 선택가산점(보직교사·농어촌·담임 등)입니다. 항목마다 상한이 있고, 같은 기간에 겹치는 항목은 유리한 하나만 셉니다.</p>
+  <p class="lead">공통가산점(직무연수 이수실적·학교폭력 실적·교육부 연구학교·재외국민교육기관 파견)과 선택가산점(보직교사·농어촌·담임·국가기술자격증 등)입니다. 항목마다 상한이 있고, 같은 기간에 겹치는 항목은 유리한 하나만 셉니다.</p>
   ${help('bonus')}
   ${sec('연도별 직무연수 시간 · 학교폭력 실적', sumSlot('sum:yearly'), `
     <div class="tbl-wrap"><table class="t" id="tbl-year"><thead><tr><th>평정 기간</th><th>직무연수 시간 합계</th><th>학점(15시간=1)</th><th style="text-align:center">학교폭력 실적</th></tr></thead><tbody>${yrows}</tbody></table></div>`,
@@ -381,13 +404,17 @@ function tabBonus() {
     ${state.bonus.periods.length ? PROW_HEAD : ''}
     <div class="rows compact" id="rows-periods">${state.bonus.periods.map((_, i) => periodRow(i)).join('') || '<div class="empty">보직교사·농어촌·담임·연구학교 기간을 추가하세요.</div>'}</div>`,
     '교육부 지정 연구학교와 재외국민교육기관 파견은 공통가산점, 나머지는 선택가산점입니다. 같은 기간 중복 불가(×) 규정은 울산 승진가산점 규정 [표38]을 따릅니다. 보직교사 경력이 1.75점(83개월 10일)을 넘으면 넘는 기간부터 “보직교사 초과근무 경력”(월 0.003점, 2022.3.1. 이후, 상한 0.40점)으로 바뀝니다.')}
+  ${sec('국가기술자격증 — 컴퓨터활용능력 등', sumSlot('sum:cert'), `
+    ${state.bonus.certs.length ? CROW_HEAD : ''}
+    <div class="rows compact" id="rows-certs">${state.bonus.certs.map((_, i) => certRow(i)).join('') || '<div class="empty">가지고 있는 컴퓨터활용능력·워드프로세서·정보처리기사 같은 자격증이 있으면 추가하세요. 없으면 비워 두면 됩니다.</div>'}</div>
+    <div class="addbar">${addBtn('자격증 추가', 'add', 'data-arr="bonus.certs" data-tpl="cert"')}</div>`,
+    "선택가산점으로 <b>가장 유리한 1개만</b> 점수가 됩니다(합산하지 않고 최대 0.50점). <b>1급·기사·산업기사·기능장·기술사 0.50점, 2·3급·기능사 0.25점</b>이라 컴퓨터활용능력은 1급 0.50점, 2급 0.25점입니다. 컴퓨터활용능력·워드프로세서·정보처리 같은 <b>정보화 관련 자격증은 담당 과목·학교급과 관계없이</b> 인정하고, 그 밖의 국가기술자격은 담당 과목과 관련되고 그 과목을 직접 가르친 경우에만 인정합니다. 직무연수 학점으로 이미 인정받은 자격증(카드 “자격취득” 표의 평정학점이 0보다 큰 것)은 선택가산점에서 빠지니 <b>학점화</b>에 체크하세요. 문서실무사는 2016.3.1.~2019.6.25. 취득분만, 교감·교장 평정은 교감 직위(또는 전직 전 직위)에서 딴 것만 인정합니다.")}
   ${sec('직접 입력하는 항목', '', `
     <div class="grid">
-      ${fl('국가기술자격(선택가산점)', sl('bonus.cert', cerOpts, { kind: 'num' }), 'c4')}
       ${fl('전국체전 유공(2005년, 최대 0.10)', nm('bonus.national'), 'c4')}
       ${fl('기타 규정 항목(담당 장학사 확인 후)', nm('bonus.other'), 'c4')}
     </div>`,
-    '국가기술자격 가산점은 직무연수 학점으로 바꾼 자격과 함께 쓸 수 없고, 담당 과목과 관련된 자격에 한합니다. 타 시·도에서 전입했다면 2015.1.1. 이후 전입자는 전입 전 지역가산점(도서벽지·농어촌 등)을 인정받지 못합니다.')}
+    '타 시·도에서 전입했다면 2015.1.1. 이후 전입자는 전입 전 지역가산점(도서벽지·농어촌 등)을 인정받지 못합니다.')}
   ${sec('가산점 요약', '', `<div class="tbl-wrap"><table class="t" id="tbl-bonus"><tbody></tbody></table></div>`)}`;
 }
 
@@ -403,7 +430,7 @@ function planHas(year) {
   const covers = cat => state.bonus.periods.some(p => p.cat === cat && E.norm(p.start) && E.norm(p.start) <= ys && (E.norm(p.end) ? E.norm(p.end) >= ye : base >= ye));
   return { head: covers('head'), homeroom: covers('homeroom'), rural: covers('rural'), special: covers('special'), policy: covers('policy'), edu: covers('edu_research'), office: covers('office_research'), violence: state.bonus.violence.map(String).includes(String(year)) };
 }
-const planCount = () => { const P = state.plan; return P.years.length + P.courses.length + P.contests.length + P.degrees.length + P.periods.length + Object.keys(P.perf || {}).filter(k => isNum(P.perf[k])).length + (isNum(P.perfFill) ? 1 : 0); };
+const planCount = () => { const P = state.plan; return P.years.length + P.courses.length + P.contests.length + P.degrees.length + P.periods.length + P.certs.length + Object.keys(P.perf || {}).filter(k => isNum(P.perf[k])).length + (isNum(P.perfFill) ? 1 : 0); };
 
 function planYearRow(i) {
   const y = state.plan.years[i], p = `plan.years.${i}`, yr = +y.year, has = planHas(yr), cy = +thisYearSpan().key;
@@ -533,6 +560,11 @@ function tabPlan() {
   ${teacher ? sec('예정 학위 취득', '', `
     <div class="rows" id="rows-pdegrees">${P.degrees.map((_, i) => pdegreeRow(i)).join('') || '<div class="empty">석사·박사 학위를 취득할 계획이 있으면 추가하세요.</div>'}</div>
     <div class="addbar">${addBtn('예정 학위', 'add-plan', 'data-arr="plan.degrees" data-tpl="pdegree"')}</div>`) : ''}
+  ${sec('예정 자격증 — 컴퓨터활용능력 등', '', `
+    ${P.certs.length ? CROW_HEAD : ''}
+    <div class="rows compact" id="rows-pcerts">${P.certs.map((_, i) => pcertRow(i)).join('') || '<div class="empty">앞으로 딸 계획인 컴퓨터활용능력·워드프로세서·정보처리기사 등이 있으면 추가하고 취득 예정일을 적으세요.</div>'}</div>
+    <div class="addbar">${addBtn('예정 자격증', 'add-plan', 'data-arr="plan.certs" data-tpl="pcert"')}</div>`,
+    "선택가산점은 가장 유리한 자격증 1개만(최대 0.50점) 점수가 됩니다. 카드(가산점 탭)에 0.50점짜리가 이미 있으면 더 오르지 않고, 0.25점짜리만 있으면 1급을 딸 때 0.25점이 더 늘어납니다. 취득 예정일이 예상 평정기준일 이후면 그다음 해 명부부터 반영됩니다.")}
   ${sec('그 밖의 예정 가산점 기간', '', `
     ${P.periods.length ? PROW_HEAD : ''}
     <div class="rows compact" id="rows-pperiods">${P.periods.map((_, i) => pperiodRow(i)).join('') || '<div class="empty">위 학년도별 칸에 없는 항목(청소년단체·순회교사 등)이나 학년도 중간부터 시작하는 기간은 여기에 직접 넣으세요.</div>'}</div>
@@ -567,6 +599,7 @@ function tabRef() {
     <tr><td>재외국민교육기관 파견(공통)</td><td>0.015</td><td>0.50 (파견교원과 합산 1.00)</td></tr>
     <tr><td>순회교사</td><td>0.005 (2016.3.1.~), 0.01 (이전)</td><td>1.00</td></tr>
     <tr><td>담임교사 · 청소년단체 · 우수지도</td><td>0.003 (담임은 2016.3.1. 이전 0.002)</td><td>합산 0.50</td></tr>
+    <tr><td>국가기술자격증(컴퓨터활용능력 등)</td><td>1급·기사급 0.50 / 2·3급·기능사 0.25</td><td>가장 유리한 1개, 0.50</td></tr>
     <tr><td>직무연수 이수(공통)</td><td>15시간당 0.02</td><td>연 0.08, 합계 1.00</td></tr>
     <tr><td>학교폭력 예방·대응(공통)</td><td>연 1회 0.1</td><td>1.00</td></tr>
   </tbody></table></div>`)}

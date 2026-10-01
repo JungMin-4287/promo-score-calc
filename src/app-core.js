@@ -31,11 +31,13 @@ const TPL = {
   contest: () => ({ label: '', date: '', scale: '시도2등급', authors: 1 }),
   degree: () => ({ level: '석사', related: false, label: '', date: '' }),
   period: cat => ({ cat: cat || 'rural', label: '', start: '', end: '' }),
+  cert: () => ({ type: 'cpu1', name: '', date: '', credited: false }),
   // 전망(예상) 입력용 — 실제 기록과 같은 모양(날짜 기본값은 추가할 때 평정기준일에 맞춰 채운다)
   pcourse: () => ({ label: '', start: '', end: '', hours: 60, score: '', mode: '집합' }),
   pcontest: () => ({ label: '', date: '', scale: '시도2등급', authors: 1 }),
   pdegree: () => ({ level: '석사', related: true, label: '', date: '' }),
   pperiod: cat => ({ cat: cat || 'rural', label: '', start: '', end: '' }),
+  pcert: () => ({ type: 'cpu1', name: '', date: '', credited: false }),
 };
 
 function normalizeState(raw) {
@@ -56,9 +58,10 @@ function normalizeState(raw) {
       periods: (s.bonus && Array.isArray(s.bonus.periods)) ? s.bonus.periods : [],
       yearHours: (s.bonus && s.bonus.yearHours && typeof s.bonus.yearHours === 'object') ? s.bonus.yearHours : {},
       violence: (s.bonus && Array.isArray(s.bonus.violence)) ? s.bonus.violence.map(String) : [],
-      cert: (s.bonus && +s.bonus.cert) || 0, national: (s.bonus && +s.bonus.national) || 0, other: (s.bonus && +s.bonus.other) || 0,
+      certs: (s.bonus && Array.isArray(s.bonus.certs)) ? s.bonus.certs.filter(r => r && typeof r === 'object') : [],
+      cert: 0, national: (s.bonus && +s.bonus.national) || 0, other: (s.bonus && +s.bonus.other) || 0,
     },
-    plan: Object.assign({ years: [], courses: [], contests: [], degrees: [], periods: [], perf: {}, perfFill: '', target: '', careerGrade: '가' }, s.plan || {}),
+    plan: Object.assign({ years: [], courses: [], contests: [], degrees: [], periods: [], certs: [], perf: {}, perfFill: '', target: '', careerGrade: '가' }, s.plan || {}),
   };
   if (!E.KINDS[out.profile.kind]) out.profile.kind = 'g1';
   if (!E.norm(out.profile.baseDate)) out.profile.baseDate = d.profile.baseDate;
@@ -67,7 +70,7 @@ function normalizeState(raw) {
   out.training.courses = out.training.courses.filter(r => r && typeof r === 'object');
   out.bonus.periods = out.bonus.periods.filter(r => r && E.CATS[r.cat]);
   out.plan.years = Array.isArray(out.plan.years) ? out.plan.years.filter(y => y && +y.year) : [];
-  ['courses', 'contests', 'degrees', 'periods'].forEach(k => { out.plan[k] = Array.isArray(out.plan[k]) ? out.plan[k].filter(r => r && typeof r === 'object') : []; });
+  ['courses', 'contests', 'degrees', 'periods', 'certs'].forEach(k => { out.plan[k] = Array.isArray(out.plan[k]) ? out.plan[k].filter(r => r && typeof r === 'object') : []; });
   if (!out.plan.perf || typeof out.plan.perf !== 'object' || Array.isArray(out.plan.perf)) out.plan.perf = {};
   delete out.plan.on;
   out.plan.target = E.norm(out.plan.target) || '';     // 전망에서 볼 예상 평정기준일(비우면 기본 탭의 평정기준일)
@@ -80,6 +83,9 @@ function normalizeState(raw) {
   const baseKey = +E.periodKey(out.profile.baseDate);
   vv.forEach(k => { let y = out.plan.years.find(r => String(r.year) === k); if (!y) { y = { year: +k, career: +k > baseKey }; out.plan.years.push(y); } y.violence = true; });
   out.plan.years.sort((a, b) => a.year - b.year);
+  // 예전 파일: 점수(0.5 / 0.25)만 고르던 '국가기술자격' 칸 → 자격증 행으로 옮긴다(종류는 '그 밖의 …', 날짜는 모름)
+  const oldCert = (s.bonus && +s.bonus.cert) || 0;
+  if (oldCert > 0 && !out.bonus.certs.length) out.bonus.certs.push({ type: oldCert >= 0.5 ? 'g50' : 'g25', name: '', date: '', credited: false });
   return out;
 }
 
@@ -123,6 +129,7 @@ function sampleState() {
       ],
       yearHours: { 2010: 30, 2011: 60, 2012: 75, 2013: 60, 2014: 90, 2015: 45, 2016: 60, 2017: 100, 2018: 120, 2019: 75, 2020: 60, 2021: 90, 2022: 105, 2023: 80, 2024: 62, 2025: 70, 2026: 48 },
       violence: ['2018', '2019', '2020', '2021', '2022', '2023', '2024', '2025'],
+      certs: [{ type: 'cpu2', name: '컴퓨터활용능력 2급', date: '2012-05-19', credited: false }],
     },
     plan: {   // 예상 입력 예시 — 왼쪽 점수는 위의 실제 기록만, 전망 탭에서 이 예상을 더해 보여 준다
       careerGrade: '가',
@@ -132,6 +139,7 @@ function sampleState() {
       ],
       courses: [{ label: '겨울방학 직무연수(예정)', start: '2027-01-11', end: '2027-01-29', hours: 60, score: 96, mode: '집합' }],
       contests: [], degrees: [], periods: [],
+      certs: [{ type: 'cpu1', name: '컴퓨터활용능력 1급(예정)', date: '2027-01-20', credited: false }],
       perf: { 2026: 99.6, 2027: 99.6, 2028: 99.6, 2029: 99.6 }, perfFill: '', target: '2030-02-28',
     },
   });
