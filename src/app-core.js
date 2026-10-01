@@ -31,11 +31,11 @@ const TPL = {
   contest: () => ({ label: '', date: '', scale: '시도2등급', authors: 1 }),
   degree: () => ({ level: '석사', related: false, label: '', date: '' }),
   period: cat => ({ cat: cat || 'rural', label: '', start: '', end: '' }),
-  // 가상(예정): 아직 확정되지 않은 항목. '가상 포함' 점수에만 들어간다(날짜 기본값은 추가할 때 평정기준일에 맞춰 채운다)
-  vcourse: () => ({ label: '가상 연수(예정)', start: '', end: '', hours: 60, score: '', mode: '집합', virtual: true }),
-  vcontest: () => ({ label: '가상 입상(예정)', date: '', scale: '시도2등급', authors: 1, virtual: true }),
-  vdegree: () => ({ level: '석사', related: true, label: '가상 학위(예정)', date: '', virtual: true }),
-  vperiod: cat => ({ cat: cat || 'homeroom', label: '가상(예정)', start: '', end: '', virtual: true }),
+  // 전망(예상) 입력용 — 실제 기록과 같은 모양(날짜 기본값은 추가할 때 평정기준일에 맞춰 채운다)
+  pcourse: () => ({ label: '', start: '', end: '', hours: 60, score: '', mode: '집합' }),
+  pcontest: () => ({ label: '', date: '', scale: '시도2등급', authors: 1 }),
+  pdegree: () => ({ level: '석사', related: true, label: '', date: '' }),
+  pperiod: cat => ({ cat: cat || 'rural', label: '', start: '', end: '' }),
 };
 
 function normalizeState(raw) {
@@ -58,7 +58,7 @@ function normalizeState(raw) {
       violence: (s.bonus && Array.isArray(s.bonus.violence)) ? s.bonus.violence.map(String) : [],
       cert: (s.bonus && +s.bonus.cert) || 0, national: (s.bonus && +s.bonus.national) || 0, other: (s.bonus && +s.bonus.other) || 0,
     },
-    plan: Object.assign({ on: false, years: [], courses: [], careerGrade: '가' }, s.plan || {}),
+    plan: Object.assign({ years: [], courses: [], contests: [], degrees: [], periods: [], perf: {}, perfFill: '', careerGrade: '가' }, s.plan || {}),
   };
   if (!E.KINDS[out.profile.kind]) out.profile.kind = 'g1';
   if (!E.norm(out.profile.baseDate)) out.profile.baseDate = d.profile.baseDate;
@@ -67,13 +67,18 @@ function normalizeState(raw) {
   out.training.courses = out.training.courses.filter(r => r && typeof r === 'object');
   out.bonus.periods = out.bonus.periods.filter(r => r && E.CATS[r.cat]);
   out.plan.years = Array.isArray(out.plan.years) ? out.plan.years.filter(y => y && +y.year) : [];
-  out.plan.courses = Array.isArray(out.plan.courses) ? out.plan.courses : [];
-  out.bonus.vviolence = (s.bonus && Array.isArray(s.bonus.vviolence)) ? s.bonus.vviolence.map(String) : [];
-  // 예전 '예정 직무연수'(전망 탭)는 연수·연구 탭의 가상(예정) 연수로 옮긴다
-  if (out.plan.courses.length) {
-    out.plan.courses.forEach(c => { if (c && typeof c === 'object') { const v = Object.assign({}, c, { virtual: true }); delete v.plan; out.training.courses.push(v); } });
-    out.plan.courses = [];
-  }
+  ['courses', 'contests', 'degrees', 'periods'].forEach(k => { out.plan[k] = Array.isArray(out.plan[k]) ? out.plan[k].filter(r => r && typeof r === 'object') : []; });
+  if (!out.plan.perf || typeof out.plan.perf !== 'object' || Array.isArray(out.plan.perf)) out.plan.perf = {};
+  delete out.plan.on;
+  // 예전 파일 변환 ① 학년도 행에 적던 근무성적 → 근무성적 예상값
+  out.plan.years.forEach(y => { if (y.perf !== undefined && y.perf !== null && y.perf !== '' && out.plan.perf[y.year] === undefined) out.plan.perf[y.year] = y.perf; delete y.perf; });
+  // ② 한때 '가상(예정)' 표시로 실제 목록에 섞어 두던 항목 → 전망으로 옮긴다(실제 기록은 카드 값만 남긴다)
+  const movedOut = (arr, to) => { for (let i = arr.length - 1; i >= 0; i--) if (arr[i] && arr[i].virtual) { const v = Object.assign({}, arr.splice(i, 1)[0]); delete v.virtual; out.plan[to].unshift(v); } };
+  movedOut(out.training.courses, 'courses'); movedOut(out.training.contests, 'contests'); movedOut(out.training.degrees, 'degrees'); movedOut(out.bonus.periods, 'periods');
+  const vv = (s.bonus && Array.isArray(s.bonus.vviolence)) ? s.bonus.vviolence.map(String) : [];
+  const baseKey = +E.periodKey(out.profile.baseDate);
+  vv.forEach(k => { let y = out.plan.years.find(r => String(r.year) === k); if (!y) { y = { year: +k, career: +k > baseKey }; out.plan.years.push(y); } y.violence = true; });
+  out.plan.years.sort((a, b) => a.year - b.year);
   return out;
 }
 
@@ -95,7 +100,6 @@ function sampleState() {
         { label: '교과 심화 직무연수(집합)', start: '2019-07-22', end: '2019-08-09', hours: 90, score: 92, mode: '집합' },
         { label: 'AI 활용 수업 설계(원격)', start: '2022-07-01', end: '2022-08-12', hours: 60, score: 96, mode: '원격' },
         { label: '학생 상담 기초(원격, 2018)', start: '2018-10-01', end: '2018-11-10', hours: 60, score: 90, mode: '원격' },
-        { label: '가상 연수(예정) — 겨울방학 60시간', start: '2027-01-11', end: '2027-01-29', hours: 60, score: 96, mode: '집합', virtual: true },
       ],
       contests: [
         { label: '시·도 교육자료전', date: '2016-07-02', scale: '시도2등급', authors: 2 },
@@ -118,19 +122,23 @@ function sampleState() {
       ],
       yearHours: { 2010: 30, 2011: 60, 2012: 75, 2013: 60, 2014: 90, 2015: 45, 2016: 60, 2017: 100, 2018: 120, 2019: 75, 2020: 60, 2021: 90, 2022: 105, 2023: 80, 2024: 62, 2025: 70, 2026: 48 },
       violence: ['2018', '2019', '2020', '2021', '2022', '2023', '2024', '2025'],
-      vviolence: ['2026'],
     },
-    plan: {
-      on: true, careerGrade: '가',
-      years: [2027, 2028, 2029].map(y => ({ year: y, head: true, homeroom: false, school: 'special', research: 'none', violence: true, hours: 60, perf: 99 })),
-      courses: [],
+    plan: {   // 예상 입력 예시 — 왼쪽 점수는 위의 실제 기록만, 전망 탭에서 이 예상을 더해 보여 준다
+      careerGrade: '가',
+      years: [
+        { year: 2026, career: false, head: false, homeroom: false, school: 'none', research: 'none', violence: true, hours: '' },
+        ...[2027, 2028, 2029].map(y => ({ year: y, head: true, homeroom: false, school: 'special', research: 'none', violence: true, hours: 60 })),
+      ],
+      courses: [{ label: '겨울방학 직무연수(예정)', start: '2027-01-11', end: '2027-01-29', hours: 60, score: 96, mode: '집합' }],
+      contests: [], degrees: [], periods: [],
+      perf: { 2026: 99.6, 2027: 99.6, 2028: 99.6, 2029: 99.6 }, perfFill: '',
     },
   });
 }
 
 let state, ui = { tab: 'basic', sample: false, dirty: false, pasteCat: 'rural', helpClosed: {} };
-let R = null;            // 현재 평정기준일 결과(가상(예정) 항목 포함)
-let R0 = null;           // 같은 날짜의 확정 결과(가상 항목을 뺀 값). 가상 항목이 없으면 R 과 같은 객체
+let R = null;            // 현재 평정기준일 결과 — 인사기록카드·입력한 실제 기록만(전망 입력은 넣지 않는다)
+let F = null;            // 같은 날짜의 예상 결과 — 실제 기록 위에 전망 탭의 입력을 얹은 값(전망 탭에서만 쓴다)
 
 function initState() {
   state = sampleState();
@@ -140,46 +148,19 @@ function initState() {
 let lastGoodBase = null;
 const curBase = () => (R ? R.baseDate : (E.norm(state.profile.baseDate) || '2027-02-28'));
 
-/* ───────── 가상(예정) 항목 ─────────
- * 아직 확정되지 않은 연수·입상·학위·가산점 기간(올해 부장·담임 등)에 '가상(예정)' 표시(행의 virtual)를 붙이면
- * 확정 점수(R0)와 따로 '가상 포함' 점수(R)를 계산한다. 학교폭력 실적은 bonus.vviolence(연도 목록)로 따로 둔다. */
-const isV = r => !!(r && r.virtual);
-const virtualCounts = (s = state) => ({
-  course: s.training.courses.filter(isV).length,
-  contest: (s.training.contests || []).filter(isV).length,
-  degree: (s.training.degrees || []).filter(isV).length,
-  period: s.bonus.periods.filter(isV).length,
-  violence: (s.bonus.vviolence || []).length,
-});
-const virtualTotal = (s = state) => { const c = virtualCounts(s); return c.course + c.contest + c.degree + c.period + c.violence; };
-const hasVirtual = (s = state) => virtualTotal(s) > 0;
-function forCompute(s) {     // 가상 학교폭력 연도를 합친 계산용 상태(행 번호는 그대로)
-  const v = s.bonus.vviolence || [];
-  if (!v.length) return s;
-  const c = clone(s);
-  c.bonus.violence = Array.from(new Set(c.bonus.violence.map(String).concat(v.map(String)))).sort();
-  return c;
-}
-function confirmedOnly(s) {  // 가상 항목을 뺀 확정 상태
-  const c = clone(s);
-  c.training.courses = c.training.courses.filter(r => !isV(r));
-  c.training.contests = (c.training.contests || []).filter(r => !isV(r));
-  c.training.degrees = (c.training.degrees || []).filter(r => !isV(r));
-  c.bonus.periods = c.bonus.periods.filter(r => !isV(r));
-  c.bonus.vviolence = [];
-  return c;
-}
-/** 평정기준일이 속한 학년도(올해) — 가상 가산점의 기본 기간 */
+/** 평정기준일이 속한 학년도(올해) — 전망의 '올해' 칸 */
 function thisYearSpan() { const k = E.periodKey(curBase()); return { key: k, start: E.periodStart(k), end: E.periodEnd(k), label: E.periodLabel(k) }; }
 
 function recompute() {
   const bd = E.norm(state.profile.baseDate);     // 입력 도중의 잘못된 날짜는 마지막 올바른 날짜로 계산을 이어 간다
   if (bd) lastGoodBase = bd;
   const base = bd || lastGoodBase || '2027-02-28';
-  R = E.compute(E.applyPlan(forCompute(state)), base);
+  R = E.compute(state, base);          // 왼쪽 점수·각 탭은 카드 기준 — 예상은 전망 탭에서만
   R.invalidBase = !bd;
-  R0 = hasVirtual() ? E.compute(E.applyPlan(confirmedOnly(state)), base) : R;
+  F = forecastAt(base);
 }
+/** 전망(예상) 계산: 실제 기록 위에 전망 입력을 얹어 d 날짜 기준으로 계산 */
+const forecastAt = d => E.compute(E.applyPlan(state), d);
 
 /* ───────── 파일 저장·불러오기 ───────── */
 let DL = null;   // downloads 기능(아티팩트 뷰어에서만)

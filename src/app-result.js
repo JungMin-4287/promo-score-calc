@@ -1,7 +1,20 @@
 /* ───────── 행별·요약 계산 표시 ───────── */
-const badge = (cls, txt) => `<span class="badge ${cls}">${txt}</span>`;
+const badge = (cls, txt, title) => `<span class="badge ${cls}"${title ? ` title="${esc(title)}"` : ''}>${txt}</span>`;
+/** 가산점 기간 행의 '월 0.018점' — 행 시작일 기준 월 평정점(여러 값이면 전체는 마우스를 올려 본다) */
+function rateShort(p) { try { return `월 ${E.CATS[p.cat].rate(E.norm(p.start) || '2030-01-01').m}점`; } catch (e) { return ''; } }
 const dutyMax = () => (isTeacher() ? 18 : 6);
 const maxOf = () => R.max;
+
+function periodResultHtml(p, info) {
+    // 한 줄에 들어가도록 짧게 쓰고, 긴 설명은 마우스를 올리면 나오는 풍선말(title)로 둔다
+    if (!E.norm(p.start)) return '<span class="muted" title="종료일을 비우면 평정기준일까지로 봅니다">시작일을 입력하세요</span>';
+    const rt = `<span class="muted rt" title="${esc(catRateText(p.cat))}">${esc(rateShort(p))}</span>`;
+    if (!info) return `${badge('info', '반영 안 됨', '평정기준일 이후이거나 이 항목의 인정 기간 밖입니다')} ${rt}`;
+    const full = mdText(info.fullMonths, info.fullDays);
+    if (info.status === 'full') return `${badge('ok', `${full} 인정`, catRateText(p.cat))}${info.over ? ' ' + badge('info', `초과 ${mdText(info.over.months, info.over.days)}`, '보직교사 1.75점 상한을 넘은 기간이라 초과근무 경력(월 0.003점)으로 계산됩니다') : ''} ${rt}`;
+    if (info.status === 'part') return `${badge('warn', `${mdText(info.months, info.days)} 인정`, `전체 ${full} 중 겹치는 항목·인정 기간 때문에 일부만 인정됩니다`)} <span class="muted xs">전체 ${full}</span>`;
+    return `${badge('bad', '인정 안 됨', '같은 기간에 월 평정점이 더 높은 항목이 있거나 인정 기간 밖입니다')} <span class="muted xs">겹침·기간 밖</span>`;
+}
 
 const DRV = {
   career(i) {
@@ -53,17 +66,7 @@ const DRV = {
     if (d && d.i === i) return `${badge('ok', pts + '점 인정')} <span class="muted">${g.related ? '직무 관련' : '직무 관련 아님(그 밖의 학위)'}</span>`;
     return badge('warn', `${pts}점이지만 다른 학위가 더 높아 제외(하나만 인정)`);
   },
-  period(i) {
-    const p = state.bonus.periods[i]; if (!p) return '';
-    if (!E.norm(p.start)) return '<span class="muted">시작일·종료일을 입력하세요 (종료일을 비우면 평정기준일까지)</span>';
-    const info = R.bonus.rowInfo[i];
-    const rate = `<span class="muted">${catRateText(p.cat)}</span>`;
-    if (!info) return `${badge('info', '평정기준일 이후이거나 인정 기간 밖')} ${rate}`;
-    const full = mdText(info.fullMonths, info.fullDays);
-    if (info.status === 'full') return `${badge('ok', `${full} 인정`)}${info.over ? ' ' + badge('info', `그중 ${mdText(info.over.months, info.over.days)}은 보직교사 초과경력`) : ''} ${rate}`;
-    if (info.status === 'part') return `${badge('warn', `${mdText(info.months, info.days)}만 인정`)} <span class="muted">(전체 ${full} 중 겹치는 항목·인정 기간 때문에 일부 제외)</span> ${rate}`;
-    return `${badge('bad', '인정되지 않음')} <span class="muted">같은 기간에 월 평정점이 더 높은 항목이 있거나 인정 기간 밖입니다</span> ${rate}`;
-  },
+  period(i) { const p = state.bonus.periods[i]; return p ? periodResultHtml(p, R.bonus.rowInfo[i]) : ''; },
   perf(y) {
     const ch = R.perf.chosen.find(c => String(c.y) === String(y));
     const v = state.perf[y];
@@ -90,6 +93,48 @@ const DRV = {
   'sum:yearly'() { const b = R.bonus.parts; return `직무연수 <b>${fx(b.trainBonus.points)}점</b>(${b.trainBonus.creditSum}학점) · 학교폭력 <b>${fx(b.violence.points)}점</b>(${b.violence.count}회)`; },
   'sum:periods'() { const b = R.bonus.parts; const v = R.bonus.total - b.trainBonus.points - b.violence.points - b.cert.points - b.other.points; return `기간으로 계산한 가산점 <b>${fx(v)}점</b>`; },
 };
+
+/* 전망 입력 행 옆의 결과 — 예상(F) 계산에서 같은 행을 찾는다(예정 항목은 실제 행 뒤에 같은 순서로 붙는다) */
+Object.assign(DRV, {
+  pcourse(i) {
+    const c = F && F.training.courses[state.training.courses.length + i]; if (!c) return '';
+    const slot = F.training.slots.find(s => s.course === c);
+    let b;
+    if (c.status === 'ok') {
+      if (slot && slot.slot === '성적') b = badge('ok', `성적 1건 · 환산 ${slot.conv}점 → ${fx(slot.points, 3)}점`);
+      else if (slot) b = badge('ok', '이수실적 6점');
+      else b = badge('info', '인정되지만 3건 한도 밖(점수 반영 없음)');
+    } else if (c.status === 'future') b = badge('info', `평정기준일(${dshort(R.baseDate)}) 이후 종료 — 다음 해 명부부터 반영`);
+    else b = badge('bad', `불인정 · ${esc(c.reason)}`);
+    return b;
+  },
+  pcontest(i) {
+    const c = F && F.training.research.contests[state.training.contests.length + i]; if (!c) return '';
+    if (!c.date) return '<span class="muted">입상 예정일을 입력하세요</span>';
+    if (c.date > R.baseDate) return badge('info', `평정기준일(${dshort(R.baseDate)}) 이후 — 다음 해 명부부터 반영`);
+    if (c.dup) return badge('warn', '같은 학년도에 더 높은 실적이 있어 제외');
+    return `${badge('ok', fx(c.points, 3) + '점')} <span class="muted">${c.key}학년도 입상 기준</span>`;
+  },
+  pdegree(i) {
+    const g = state.plan.degrees[i]; if (!g || !F) return '';
+    const t = E.DEGREE[g.level]; const pts = g.related ? t.related : t.other;
+    if (g.date && E.norm(g.date) && E.norm(g.date) > R.baseDate) return badge('info', `평정기준일(${dshort(R.baseDate)}) 이후 — 다음 해 명부부터 반영`);
+    const d = F.training.research.degree;
+    if (d && d.i === state.training.degrees.length + i) return `${badge('ok', pts + '점 인정')} <span class="muted">${g.related ? '직무 관련' : '직무 관련 아님'}</span>`;
+    return badge('warn', `${pts}점이지만 다른 학위가 더 높아 제외(하나만 인정)`);
+  },
+  pperiod(i) {
+    const p = state.plan.periods[i]; if (!p || !F) return '';
+    return periodResultHtml(p, F.bonus.rowInfo[state.bonus.periods.length + i]);
+  },
+  fperf(y) {
+    if (!F) return '';
+    const ch = F.perf.chosen.find(c => String(c.y) === String(y));
+    if (ch) return `${badge('ok', `반영 ${Math.round(ch.w * 100)}%`)}${ch.imputed ? ' ' + badge('warn', '입력이 없어 규정으로 보정') : ''}`;
+    const v = F.perf.candidates.find(c => String(c.y) === String(y));
+    return v ? `<span class="muted xs">${isTeacher() ? '유리한 3개 학년도가 아니라 반영 안 됨' : '최근 3개 학년도만 반영'}</span>` : '';
+  },
+});
 
 function paintDerived() {
   if (!R) return;
@@ -147,27 +192,61 @@ function paintTables() {
     h += `<tr class="tot"><td>가산점 합계</td><td>${fx(R.bonus.total, 4)}</td><td colspan="2"></td></tr>`;
     tb.parentElement.innerHTML = h;   // thead 포함 교체
   }
+  const pt = $('#plan-top');
+  if (pt) pt.innerHTML = planSummaryHtml();
+  $$('input[data-path^="plan.perf."]').forEach(el => {   // 비어 있는 학년도 가정값이 바뀌면 칸 안내 글도 같이
+    const y = el.dataset.path.split('.').pop(), act = state.perf[y];
+    el.placeholder = isNum(state.plan.perfFill) && !isNum(act) ? '가정 ' + state.plan.perfFill : '예: 99';
+  });
   const po = $('#plan-out');
   if (po) po.innerHTML = renderProjection();
 }
 
-/* ───────── 전망 표 + 선 그래프 ───────── */
+/* ───────── 전망: 예상 요약 · 표 + 선 그래프 ───────── */
+function planSummaryHtml() {
+  if (!R || !F) return '';
+  const has = planCount() > 0;
+  const same = R.total === null || F.total === null;           // 한쪽이라도 근평이 없으면 같은 기준(근평 제외)으로 견준다
+  const b = same ? R.sumWithoutPerf : R.total, f = same ? F.sumWithoutPerf : F.total, d = f - b;
+  const cats = [['경력평정', R.career.total, F.career.total], ['자격연수', R.training.qual.points, F.training.qual.points], ['직무연수', R.training.duty, F.training.duty],
+    ...(isTeacher() ? [['연구실적', R.training.researchPoints, F.training.researchPoints]] : []), ['가산점 공통', R.bonus.common, F.bonus.common], ['가산점 선택', R.bonus.select, F.bonus.select]];
+  if (!same) cats.splice(1, 0, ['근무성적', R.perf.value, F.perf.value]);
+  const ups = cats.filter(([, x, y]) => x !== null && y !== null && Math.abs(y - x) > 0.0005).map(([n, x, y]) => `${n} ${y - x > 0 ? '+' : ''}${fx(y - x, 3)}`);
+  let sub = `${same ? '근평 제외 합계' : '총점'} 기준`;
+  if (!has) sub += ' · 아직 입력한 예상이 없어 카드 기준과 같습니다';
+  else if (ups.length) sub += ` · 늘어난 항목: ${ups.join(' · ')}`;
+  else sub += ' · 이 평정기준일에는 달라지는 점수가 없습니다(앞으로 학년도에 넣은 것은 아래 표의 해당 날짜 열에서 반영됩니다)';
+  const extra = R.total === null && F.total !== null ? `<div class="fs-extra">근무성적을 가정해 더한 예상 총점은 <b>${fx(F.total, 3)}</b> / ${fx(F.maxTotal, 2)}점입니다.</div>` : '';
+  return `<div class="fsum${has ? '' : ' none'}">
+    <div class="fs-h">예상 요약 <span class="muted">· 평정기준일 ${dshort(R.baseDate)}</span></div>
+    <div class="fs-row">
+      <div class="fs-col"><span class="lb">카드 기준(현재)</span><b class="num">${fx(b, 3)}</b></div>
+      <span class="fs-arrow" aria-hidden="true">→</span>
+      <div class="fs-col strong"><span class="lb">예상</span><b class="num">${fx(f, 3)}</b></div>
+      <div class="fs-d${d > 0.0005 ? ' up' : ''}">${d >= -0.0005 ? '＋' : '−'}${fx(Math.abs(d), 3)}</div>
+    </div>
+    <div class="fs-sub">${sub}</div>${extra}
+  </div>`;
+}
+
 function renderProjection() {
   const cols = projection();
-  if (cols.length < 2) return '<div class="empty">계획 학년도를 입력하면 전망이 나타납니다.</div>';
-  const teacher = isTeacher();
-  const pend = cols.some(c => c.r.total === null);
-  const val = c => (pend ? c.r.sumWithoutPerf : c.r.total);
-  const th = cols.map(c => `<th>${dshort(c.date)}</th>`).join('');
+  const teacher = isTeacher(), has = planCount() > 0;
+  const pend = cols.some(c => c.r.total === null || c.b.total === null);
+  const val = r => (pend ? r.sumWithoutPerf : r.total);
+  const vals = [cols[0].b].concat(cols.map(c => c.r));          // 첫 열 = 카드 기준 현재, 이어서 날짜별 예상
+  const bs = [cols[0].b].concat(cols.map(c => c.b));            // 같은 날짜에 '추가 없이'(카드 기준 그대로 근무만 이어질 때)
+  const head = `<th>평정기준일</th><th class="cardcol">카드 기준<br><span class="xs">${dshort(cols[0].date)}</span></th>${cols.map(c => `<th>예상<br><span class="xs">${dshort(c.date)}</span></th>`).join('')}`;
   const line = (label, get, dec = 3, cls = '') => {
-    const vals = cols.map(c => get(c.r));
-    const tds = vals.map((v, i) => {
-      const up = i > 0 && v !== null && vals[i - 1] !== null && v > vals[i - 1] + 1e-9;
-      return `<td class="${up ? 'up' : (v === null ? 'nil' : '')}">${v === null ? '—' : fx(v, dec)}${up ? ` <span class="xs">▲${fx(v - vals[i - 1], 3)}</span>` : ''}</td>`;
+    const v = vals.map(get);
+    const tds = v.map((x, i) => {
+      const prev = i === 0 ? null : v[i - 1];       // 예상 첫 열은 카드 기준과, 그 뒤는 앞 열과 견준다
+      const up = i > 0 && x !== null && prev !== null && x > prev + 1e-9;
+      return `<td class="${i === 0 ? 'cardcol ' : ''}${up ? 'up' : (x === null ? 'nil' : '')}">${x === null ? '—' : fx(x, dec)}${up ? ` <span class="xs">▲${fx(x - prev, 3)}</span>` : ''}</td>`;
     }).join('');
     return `<tr class="${cls}"><td>${label}</td>${tds}</tr>`;
   };
-  const table = `<div class="tbl-wrap"><table class="t"><thead><tr><th>평정기준일</th>${th}</tr></thead><tbody>
+  const table = `<div class="tbl-wrap"><table class="t proj"><thead><tr>${head}</tr></thead><tbody>
     ${line('경력평정(70)', r => r.career.total)}
     ${line('근무성적(100)', r => r.perf.value)}
     ${line('자격연수(9)', r => r.training.qual.points)}
@@ -177,37 +256,46 @@ function renderProjection() {
     ${line('가산점 선택(9.91)', r => r.bonus.select)}
     ${line('근평 제외 합계', r => r.sumWithoutPerf)}
     ${line('총점', r => r.total, 3, 'tot')}
+    <tr class="sep"><td>추가 없이(카드 기준) ${pend ? '근평 제외 합계' : '총점'}</td>${bs.map((r, i) => `<td class="${i === 0 ? 'cardcol' : ''}">${fx(val(r), 3)}</td>`).join('')}</tr>
+    <tr><td>예상 − 추가 없이</td><td class="cardcol">—</td>${cols.map(c => { const d = val(c.r) - val(c.b); return `<td class="${d > 0.0005 ? 'up' : ''}">${d >= -0.0005 ? '+' : '−'}${fx(Math.abs(d), 3)}</td>`; }).join('')}</tr>
   </tbody></table></div>`;
-  // 선 그래프(합계 한 줄)
-  const vals = cols.map(val);
-  const W = 640, H = 210, L = 44, Rm = 20, T = 26, B = 32;
-  let lo = Math.min(...vals), hi = Math.max(...vals);
+  // 선 그래프: 예상(실선) · 추가 없이(점선)
+  const A = cols.map(c => val(c.r)), Bv = cols.map(c => val(c.b));
+  const showB = has && A.some((v, i) => Math.abs(v - Bv[i]) > 1e-9);
+  const all = showB ? A.concat(Bv) : A;
+  const W = 640, H = 210, L = 44, Rm = 20, T = 26, Bm = 32;
+  let lo = Math.min(...all), hi = Math.max(...all);
   lo = Math.floor((lo - 2) / 5) * 5; hi = Math.ceil((hi + 2) / 5) * 5;
   if (hi - lo < 10) hi = lo + 10;
   const x = i => L + (W - L - Rm) * (cols.length === 1 ? 0.5 : i / (cols.length - 1));
-  const y = v => T + (H - T - B) * (1 - (v - lo) / (hi - lo));
+  const y = v => T + (H - T - Bm) * (1 - (v - lo) / (hi - lo));
   const ticks = []; const step = (hi - lo) / 4; for (let k = 0; k <= 4; k++) ticks.push(lo + step * k);
-  const pts = vals.map((v, i) => [x(i), y(v)]);
-  const path = pts.map((p, i) => `${i ? 'L' : 'M'}${p[0].toFixed(1)},${p[1].toFixed(1)}`).join(' ');
-  const area = `${path} L${pts[pts.length - 1][0].toFixed(1)},${(H - B).toFixed(1)} L${pts[0][0].toFixed(1)},${(H - B).toFixed(1)} Z`;
-  const svg = `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="평정기준일별 ${pend ? '근평 제외 합계' : '총점'} 변화 선 그래프. 표와 같은 값입니다.">
+  const mk = arr => arr.map((v, i) => [x(i), y(v)]);
+  const pts = mk(A), pb = mk(Bv);
+  const pathOf = p => p.map((q, i) => `${i ? 'L' : 'M'}${q[0].toFixed(1)},${q[1].toFixed(1)}`).join(' ');
+  const path = pathOf(pts), pathB = pathOf(pb);
+  const area = `${path} L${pts[pts.length - 1][0].toFixed(1)},${(H - Bm).toFixed(1)} L${pts[0][0].toFixed(1)},${(H - Bm).toFixed(1)} Z`;
+  const what = pend ? '근평 제외 합계' : '총점';
+  const svg = `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="평정기준일별 ${what} 변화 선 그래프${showB ? '(예상과 추가 없이 두 줄)' : ''}. 표와 같은 값입니다.">
     ${ticks.map(t => `<line class="grid-l" x1="${L}" x2="${W - Rm}" y1="${y(t).toFixed(1)}" y2="${y(t).toFixed(1)}"/><text x="${L - 8}" y="${(y(t) + 4).toFixed(1)}" text-anchor="end">${Math.round(t)}</text>`).join('')}
-    <path class="ar" d="${area}"/><path class="ln" d="${path}"/>
-    ${pts.map((p, i) => `<g><circle class="dt" cx="${p[0].toFixed(1)}" cy="${p[1].toFixed(1)}" r="5"/><circle class="hit" cx="${p[0].toFixed(1)}" cy="${p[1].toFixed(1)}" r="16"><title>${dshort(cols[i].date)} ${pend ? '근평 제외 합계' : '총점'} ${fx(vals[i], 3)}</title></circle></g>`).join('')}
-    ${pts.map((p, i) => (i === 0 || i === pts.length - 1) ? `<text class="lbl" x="${p[0].toFixed(1)}" y="${(p[1] - 11).toFixed(1)}" text-anchor="${i === 0 ? 'start' : 'end'}">${fx(vals[i], 3)}</text>` : '').join('')}
+    <path class="ar" d="${area}"/>${showB ? `<path class="ln base" d="${pathB}"/>` : ''}<path class="ln" d="${path}"/>
+    ${pts.map((p, i) => `<g><circle class="dt" cx="${p[0].toFixed(1)}" cy="${p[1].toFixed(1)}" r="5"/><circle class="hit" cx="${p[0].toFixed(1)}" cy="${p[1].toFixed(1)}" r="16"><title>${dshort(cols[i].date)} 예상 ${what} ${fx(A[i], 3)}${showB ? ` · 추가 없이 ${fx(Bv[i], 3)}` : ''}</title></circle></g>`).join('')}
+    ${pts.map((p, i) => (i === 0 || i === pts.length - 1) ? `<text class="lbl" x="${p[0].toFixed(1)}" y="${(p[1] - 11).toFixed(1)}" text-anchor="${i === 0 ? 'start' : 'end'}">${fx(A[i], 3)}</text>` : '').join('')}
+    ${showB ? `<text class="lbl base" x="${pb[pb.length - 1][0].toFixed(1)}" y="${(pb[pb.length - 1][1] + 17).toFixed(1)}" text-anchor="end">${fx(Bv[Bv.length - 1], 3)}</text>` : ''}
     ${pts.map((p, i) => `<text x="${p[0].toFixed(1)}" y="${H - 10}" text-anchor="${i === 0 ? 'start' : i === pts.length - 1 ? 'end' : 'middle'}">${dshort(cols[i].date)}</text>`).join('')}
   </svg>`;
+  const legend = showB ? '<div class="legend"><span><i class="sw solid"></i>예상(입력한 예상 반영)</span><span><i class="sw dashed"></i>추가 없이(카드 기준 그대로 근무만 이어질 때)</span></div>' : '';
   const expire = [];
   R.training.courses.forEach(c => { if (c.status === 'ok' && c.expires && c.expires <= cols[cols.length - 1].date) expire.push(`‘${esc(c.label)}’ ${dotd(c.expires)}`); });
-  return `<div class="chart-box">${svg}</div>
-    <p class="note">${pend ? '근무성적이 비어 있어 <b>근평을 뺀 합계</b>를 그렸습니다.' : '총점 변화입니다.'} 세로 눈금은 ${lo}점부터라 변화 폭이 커 보이니, 정확한 값은 아래 표를 보세요.</p>
+  return `<div class="chart-box">${svg}</div>${legend}
+    <p class="note">${pend ? '근무성적이 비어 있어 <b>근평을 뺀 합계</b>를 그렸습니다.' : '총점 변화입니다.'} ${has ? '' : '입력한 예상이 없어 카드 기준(계속 근무만 이어질 때)의 변화입니다. '}세로 눈금은 ${lo}점부터라 변화 폭이 커 보이니, 정확한 값은 아래 표를 보세요.</p>
     ${table}
     ${expire.length ? `<div class="callout warn"><b>직무연수 10년 만료 예정:</b> ${expire.join(', ')} — 만료일이 지난 평정기준일부터 점수에서 빠집니다.</div>` : ''}`;
 }
 
 /* ───────── 확인 필요 · 점수 올리는 방법 ───────── */
 function whatIf(mut) {
-  const s = clone(forCompute(state)); mut(s);
+  const s = clone(state); mut(s);
   return E.compute(E.applyPlan(s), R.baseDate);
 }
 function buildChecks() {
@@ -221,11 +309,6 @@ function buildChecks() {
   const d = R.training.research.degree;
   if (d && !d.related && d.level === '석사') add('warn', '석사학위가 “직무 관련 아님”으로 계산됐습니다. 교과·교육 관련 학위인데 인사기록카드에 N으로 돼 있다면 정정을 요청하세요.');
   [...R.career.warnings, ...(R.perf.pending ? [] : R.perf.warnings), ...R.training.warnings, ...R.bonus.warnings].forEach(w => add('warn', esc(w)));
-  if (state.plan.on && state.plan.years.some(y => `${y.year}-03-01` <= R.baseDate)) add('info', '평정기준일이 계획 학년도에 걸쳐 있어 <b>계획(가정)이 포함된 값</b>입니다.');
-  if (hasVirtual()) {
-    const v0 = R0.total === null ? R0.sumWithoutPerf : R0.total, v1 = R.total === null ? R.sumWithoutPerf : R.total;
-    add('info', `<b>가상(예정) 항목 ${virtualTotal()}건이 포함된 값</b>입니다. 가상을 뺀 확정 점수는 <b>${fx(v0, 3)}</b>(가상으로 ${v1 - v0 >= 0 ? '+' : ''}${fx(v1 - v0, 3)})입니다.`);
-  }
   return out;
 }
 function buildTips() {
@@ -249,7 +332,7 @@ function buildTips() {
   const vc = R.bonus.parts.violence.count;
   if (vc < 10) {
     const lastKey = E.periodKey(R.baseDate);
-    const has = state.bonus.violence.includes(lastKey) || (state.bonus.vviolence || []).map(String).includes(lastKey);
+    const has = state.bonus.violence.includes(lastKey);
     if (!has) tips.push({ gain: 0.1, html: `<b>학교폭력 예방·대응 실적.</b> ${E.periodLabel(lastKey)}에 학교폭력 관련 실적이 등재되면 <b>+0.1점</b>입니다(현재 ${vc}회, 상한 10회).` });
   }
   // 연구실적 여지
@@ -288,46 +371,41 @@ function renderResult() {
   const K = kindCfg(), teacher = isTeacher();
   const pend = R.total === null;
   const shown = pend ? R.sumWithoutPerf : R.total;
-  const V = hasVirtual();                      // 가상(예정) 항목이 들어 있는가 — 그러면 R 은 '가상 포함', R0 는 '확정'
-  const shown0 = V ? (R0.total === null ? R0.sumWithoutPerf : R0.total) : shown;
   const meters = [
-    ['경력평정', R.career.total, 70, 3, R0.career.total],
-    ['근무성적', R.perf.value, 100, 3, R0.perf.value],
-    ['자격연수', R.training.qual.points, 9, 3, R0.training.qual.points],
-    ['직무연수', R.training.duty, dutyMax(), 3, R0.training.duty],
-    ...(teacher ? [['연구실적', R.training.researchPoints, 3, 3, R0.training.researchPoints]] : []),
-    ['가산점 · 공통', R.bonus.common, 3.5, 3, R0.bonus.common],
-    ['가산점 · 선택', R.bonus.select, 9.91, 3, R0.bonus.select],
+    ['경력평정', R.career.total, 70, 3],
+    ['근무성적', R.perf.value, 100, 3],
+    ['자격연수', R.training.qual.points, 9, 3],
+    ['직무연수', R.training.duty, dutyMax(), 3],
+    ...(teacher ? [['연구실적', R.training.researchPoints, 3, 3]] : []),
+    ['가산점 · 공통', R.bonus.common, 3.5, 3],
+    ['가산점 · 선택', R.bonus.select, 9.91, 3],
   ];
-  const mHtml = meters.map(([n, v, mx, d, v0]) => {
+  const mHtml = meters.map(([n, v, mx, d]) => {
     if (v === null) return `<li><div class="m-top"><span class="m-name">${n}</span><span class="m-val muted">입력 전<span class="m-max"> / ${mx}</span></span></div><div class="meter pending"></div></li>`;
-    const dv = V && v0 !== null ? v - v0 : 0, hasD = Math.abs(dv) > 0.0005;
-    const pctAll = Math.max(0, Math.min(100, v / mx * 100)), pctConf = hasD ? Math.max(0, Math.min(pctAll, (v0 / mx) * 100)) : pctAll;
-    const bar = hasD ? `<i style="width:${pctConf.toFixed(1)}%"></i><i class="v" style="width:${Math.max(0, pctAll - pctConf).toFixed(1)}%"></i>` : `<i style="width:${pctAll.toFixed(1)}%"></i>`;
-    const delta = hasD ? `<span class="vdelta">가상 ${dv > 0 ? '+' : ''}${fx(dv, 3)}</span>` : '';
-    return `<li><div class="m-top"><span class="m-name">${n}${v >= mx - 1e-9 ? '<span class="cap">만점</span>' : ''}</span><span class="m-val">${delta}${fx(v, d)}<span class="m-max"> / ${mx}</span></span></div><div class="meter" role="meter" aria-label="${n}" aria-valuemin="0" aria-valuemax="${mx}" aria-valuenow="${fx(v, d)}">${bar}</div></li>`;
+    const pct = Math.max(0, Math.min(100, v / mx * 100));
+    return `<li><div class="m-top"><span class="m-name">${n}${v >= mx - 1e-9 ? '<span class="cap">만점</span>' : ''}</span><span class="m-val">${fx(v, d)}<span class="m-max"> / ${mx}</span></span></div><div class="meter" role="meter" aria-label="${n}" aria-valuemin="0" aria-valuemax="${mx}" aria-valuenow="${fx(v, d)}"><i style="width:${pct.toFixed(1)}%"></i></div></li>`;
   }).join('');
   const checks = buildChecks(), tips = buildTips(), caps = capsReached();
   const ic = { warn: '!', bad: '✕', info: 'i', ok: '✓' };
   $('#result').innerHTML = `
     <div class="card score">
-      <div class="eyebrow">${esc(K.label)} · 평정기준일 ${dshort(R.baseDate)}${V ? ' · <span class="vtag">가상 포함</span>' : ''}</div>
+      <div class="eyebrow">${esc(K.label)} · 평정기준일 ${dshort(R.baseDate)}</div>
       <div class="hero${pend ? ' pending' : ''}"><span>${fx(shown, 3)}</span><span class="of">/ ${fx(R.maxTotal, 2)}점${pend ? ' (근평 제외)' : ''}</span></div>
       <div class="sub">${pend ? '근무성적을 입력하면 총점이 계산됩니다.' : `공식 표기(소수 4자리) <b>${fx(R.total, 4)}</b>`}</div>
-      ${V ? `<div class="vsum"><span><b>확정</b> ${fx(shown0, 3)}</span><span class="plus">＋</span><span><b>가상</b> ${shown - shown0 >= 0 ? '+' : ''}${fx(shown - shown0, 3)}</span><span class="muted xs">가상 ${virtualTotal()}건 포함${pend ? ' · 근평 제외' : ''}</span></div>` : ''}
+      <div class="sub xs">인사기록카드·입력한 기록 기준입니다. 앞으로 채울 것의 예상은 <button type="button" class="step-link" data-act="tab" data-tab="plan">전망 탭</button>에서 봅니다.</div>
       <ul class="meters">${mHtml}</ul>
     </div>
     ${checks.length ? `<div class="card"><h3>확인이 필요한 것 <span class="badge warn">${checks.length}</span></h3><ul class="list">${checks.map(c => `<li><span class="ic ${c.cls}">${ic[c.cls]}</span><span>${c.html}</span></li>`).join('')}</ul></div>` : ''}
     ${tips.length ? `<div class="card"><h3>점수를 올릴 수 있는 곳</h3><ul class="list">${tips.map(t => `<li><span class="ic ok">＋</span><span>${t.html}</span></li>`).join('')}</ul>${caps.length ? `<p class="foot" style="margin-top:10px">이미 상한에 닿아 더 늘려도 변화가 없는 항목: ${caps.join(' · ')}</p>` : ''}</div>` : (caps.length ? `<div class="card"><p class="foot">상한에 닿은 항목: ${caps.join(' · ')}</p></div>` : '')}
     <details class="help" data-help="result"${ui.helpClosed && ui.helpClosed.result ? '' : ' open'}><summary><span class="hi" aria-hidden="true">?</span>결과 보는 법</summary><div class="help-body">
       <p><span class="k">큰 숫자</span>경력·근무성적·연수성적·가산점을 모두 더한 예상 총점입니다. 근무성적이 비어 있으면 근평을 뺀 합계가 나옵니다.</p>
-      <p><span class="k">막대</span>항목별 점수가 만점의 얼마인지 보여 줍니다. 빗금 부분은 가상(예정) 항목으로 늘어난 몫입니다.</p>
-      <p><span class="k">확정 + 가상</span>가상(예정) 항목을 넣으면 큰 숫자는 가상을 포함한 값이고, 바로 아래에 가상을 뺀 확정 점수와 가상으로 늘어난 점수를 따로 보여 줍니다.</p>
+      <p><span class="k">막대</span>항목별 점수가 만점의 얼마인지 보여 줍니다.</p>
+      <p><span class="k">카드 기준</span>이 점수와 각 탭은 인사기록카드(입력한 실제 기록)만 반영합니다. 앞으로 채울 수 있는 연수·가산점·근무성적을 넣은 예상 점수는 전망 탭에서 봅니다.</p>
       <p><span class="k">확인이 필요한 것</span>점수가 달라질 수 있거나 요건이 모자란 부분입니다.</p>
       <p><span class="k">점수를 올릴 수 있는 곳</span>지금 입력한 값에서 더 얻을 수 있는 점수를 큰 순서로 보여 줍니다.</p>
     </div></details>
     <p class="foot">참고용 계산입니다. 최종 점수는 학교 평정과 교육청 확인을 거쳐 확정됩니다. 입력한 내용은 저장하지도, 서버로 보내지도 않습니다(새로 고치면 사라지니 필요하면 “입력값 저장”으로 파일을 받아 두세요).</p>`;
-  $('#minibar').innerHTML = `<div><div class="eyebrow xs muted">${esc(K.label)}${pend ? ' · 근평 제외' : ''}${V ? ' · 가상 포함' : ''}</div><div class="mb-val num">${fx(shown, 3)}<span class="muted small"> / ${fx(R.maxTotal, 2)}</span></div></div><div class="mb-sub">평정기준일<br>${dshort(R.baseDate)}</div>`;
+  $('#minibar').innerHTML = `<div><div class="eyebrow xs muted">${esc(K.label)}${pend ? ' · 근평 제외' : ''}</div><div class="mb-val num">${fx(shown, 3)}<span class="muted small"> / ${fx(R.maxTotal, 2)}</span></div></div><div class="mb-sub">평정기준일<br>${dshort(R.baseDate)}</div>`;
 }
 
 /* ───────── 탭 위 '확인 필요' 점 ───────── */

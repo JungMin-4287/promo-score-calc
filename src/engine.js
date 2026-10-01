@@ -658,35 +658,58 @@
   }
 
   /* ───────── 시나리오(앞으로 N년) ───────── */
-  /** plan.years: [{year:2026, head, homeroom, school:'rural'|'special'|'policy'|'none', research:'none'|'edu'|'office', violence, hours, perf}] */
+  /** 전망(예상) 입력을 실제 기록 위에 얹은 상태를 만든다. 실제 기록(state)은 건드리지 않는다.
+   *  plan.years  : [{year(학년도 시작 연도), career(false면 근무 경력을 더하지 않음 — 올해 칸), head, homeroom, school:'rural'|'special'|'policy'|'none',
+   *                  research:'none'|'edu'|'office', violence, hours(추가 연수 시간)}]
+   *  plan.courses/contests/degrees/periods : 예정 직무연수·연구대회·학위·가산점 기간(실제 행과 같은 모양)
+   *  plan.perf   : { 학년도: 근무성적 합산점(가정) } — 실제 입력이 있어도 이 값이 우선
+   *  plan.perfFill : 비어 있는 학년도를 이 점수로 가정
+   *  예정 항목은 실제 행들 뒤에 같은 순서로 붙이므로, 화면에서 (실제 행 수 + 순번)으로 결과를 찾을 수 있다. */
   function applyPlan(state) {
     const plan = state.plan;
-    if (!plan || !plan.on || !Array.isArray(plan.years) || (!plan.years.length && !(plan.courses || []).length)) return state;
+    if (!plan) return state;
+    const years = Array.isArray(plan.years) ? plan.years.filter(y => y && +y.year) : [];
+    const list = k => (Array.isArray(plan[k]) ? plan[k].filter(r => r && typeof r === 'object') : []);
+    const perfMap = plan.perf && typeof plan.perf === 'object' ? plan.perf : {};
+    const okNum = v => v !== undefined && v !== null && v !== '' && !isNaN(+v);
+    const fill = okNum(plan.perfFill) ? +plan.perfFill : null;
+    if (!years.length && !list('courses').length && !list('contests').length && !list('degrees').length && !list('periods').length
+      && !Object.keys(perfMap).some(k => okNum(perfMap[k])) && fill === null) return state;
     const s = JSON.parse(JSON.stringify(state));
     s.career = (s.career || []).filter(r => !r.plan);
-    // '현재 재직(종료일 비움)' 경력은 계획이 시작되기 전날까지만 — 계획 연도 행과 겹치지 않게
-    if (plan.years.length) {
-      const firstYear = Math.min(...plan.years.map(y => y.year));
-      s.career.forEach(r => { if (!r.end && !r.mil) r.end = addDays(`${firstYear}-03-01`, -1); });
-    }
+    // 지금 근무 중(종료일을 비운) 경력이 있으면 어느 평정기준일에서도 이어서 계산되므로, 학년도 칸마다 경력 행을 따로 더하지 않는다
+    // (그렇지 않으면 마지막 전망 학년도 이후 날짜에서 경력이 멈춘다). 종료일을 적어 둔 경우에만 학년도 칸이 근무를 이어 준다.
+    const working = s.career.some(r => !r.end && !r.mil);
+    s.bonus = s.bonus || {};
     s.bonus.periods = (s.bonus.periods || []).filter(r => !r.plan);
     s.bonus.violence = (s.bonus.violence || []).slice();
     s.bonus.yearHours = Object.assign({}, s.bonus.yearHours || {});
     s.perf = Object.assign({}, s.perf || {});
+    s.training = s.training || {};
     s.training.courses = (s.training.courses || []).filter(c => !c.plan);
-    for (const y of plan.years) {
-      const st = `${y.year}-03-01`, en = schoolYearEnd(y.year);
-      if (y.career !== false) s.career.push({ start: st, end: en, grade: plan.careerGrade || '가', rate: 1, label: `${y.year}학년도(계획)`, plan: true });
-      const add = (cat) => s.bonus.periods.push({ cat, start: st, end: en, label: `${y.year}학년도(계획)`, plan: true });
+    s.training.contests = (s.training.contests || []).filter(c => !c.plan);
+    s.training.degrees = (s.training.degrees || []).filter(c => !c.plan);
+    for (const c of list('courses')) s.training.courses.push({ ...c, plan: true });
+    for (const c of list('contests')) s.training.contests.push({ ...c, plan: true });
+    for (const g of list('degrees')) s.training.degrees.push({ ...g, plan: true });
+    for (const p of list('periods')) s.bonus.periods.push({ ...p, plan: true });
+    for (const y of years) {
+      const yr = +y.year, st = `${yr}-03-01`, en = schoolYearEnd(yr);
+      if (y.career !== false && !working) s.career.push({ start: st, end: en, grade: plan.careerGrade || '가', rate: 1, label: `${yr}학년도(계획)`, plan: true });
+      const add = (cat) => s.bonus.periods.push({ cat, start: st, end: en, label: `${yr}학년도(계획)`, plan: true });
       if (y.head) add('head');
       if (y.homeroom) add('homeroom');
       if (y.school && y.school !== 'none') add(y.school);
       if (y.research === 'edu') add('edu_research'); else if (y.research === 'office') add('office_research');
-      if (y.violence && !s.bonus.violence.includes(String(y.year))) s.bonus.violence.push(String(y.year));
-      if (y.hours !== undefined && y.hours !== null && y.hours !== '') s.bonus.yearHours[String(y.year)] = +y.hours;
-      if (y.perf !== undefined && y.perf !== null && y.perf !== '') s.perf[y.year] = +y.perf;
+      if (y.violence && !s.bonus.violence.includes(String(yr))) s.bonus.violence.push(String(yr));
+      if (okNum(y.hours)) s.bonus.yearHours[String(yr)] = rnd((+s.bonus.yearHours[String(yr)] || 0) + (+y.hours), 2);   // 실제 시간에 더한다
+      if (okNum(y.perf)) s.perf[yr] = +y.perf;     // 예전 저장 파일(학년도 행에 근무성적을 적던 때)과의 호환
     }
-    for (const c of plan.courses || []) s.training.courses.push({ ...c, plan: true });
+    for (const k of Object.keys(perfMap)) if (okNum(perfMap[k])) s.perf[k] = +perfMap[k];
+    if (fill !== null) {
+      const y0 = year(norm(state.profile && state.profile.baseDate) || '2027-02-28');
+      for (let y = y0 - 7; y <= y0 + 8; y++) if (!okNum(s.perf[y])) s.perf[y] = fill;
+    }
     return s;
   }
 
@@ -698,7 +721,7 @@
       perf: {},
       training: { qual: { name: '중등1정교사자격', label: '', start: '', end: '', score: '', full: 100 }, courses: [], contests: [], degrees: [] },
       bonus: { periods: [], yearHours: {}, violence: [], cert: 0, national: 0, other: 0 },
-      plan: { on: false, years: [], courses: [], careerGrade: '가' },
+      plan: { years: [], courses: [], contests: [], degrees: [], periods: [], perf: {}, perfFill: '', careerGrade: '가' },
     };
   }
 
